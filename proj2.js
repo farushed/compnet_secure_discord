@@ -4,11 +4,17 @@
 // @version      0.1
 // @author       Daniel Farushev
 // @match        https://discord.com/*
+// @grant        none
 // ==/UserScript==
 
 
+// Placeholder "encryption" for now just to see things happening
+function encrypt(text) {
+    return text.split('').reverse().join('');
+}
+
 function decrypt(text) {
-    return text.toUpperCase();
+    return text.split('').reverse().join('');
 }
 
 
@@ -26,20 +32,60 @@ function handleNewMessage(mutationsList, observer) {
                     origSpan.classList.add('encrypted')
 
                     let text = origSpan.textContent;
-                    // TODO handle encryption before actually sending anything! messages should be encrypted in reality
-                    // origSpan.textContent = `Encrypted "${text}" (TODO)`;
-                    origSpan.textContent = text;
-
 
                     let decrypted = document.createElement('p');
                     decrypted.classList.add('decrypted')
-                    // TODO actually decrypt here
-                    // decrypted.textContent = `Decrypted "${text}" (TODO)`;
                     decrypted.textContent = decrypt(text);
 
                     messageNode.appendChild(decrypted); // add after original message span
                 }
             });
+        }
+    });
+}
+
+// We'll get token by listening to an outgoing request that sets the Authorization header
+let token = null;
+
+function setupTextbox() {
+    let textbox = document.createElement('input');
+    textbox.classList.add('encryptInput', 'markup_a7e664', 'editor__66464', 'fontSize16Padding__48818', 'themedBackground__6b1b6', 'scrollableContainer__33e06')
+    textbox.setAttribute('type', 'text');
+    textbox.setAttribute('placeholder', 'Enter message to encrypt...');
+    // Insert the textbox just before the form div
+    let formDiv = document.querySelector('form > div');
+    formDiv.prepend(textbox);
+
+    // Add event listener to the textbox for keydown event
+    textbox.addEventListener('keydown', function(event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+
+            // Get the value of the textbox
+            let inputValue = textbox.value;
+            inputValue = encrypt(inputValue);
+
+            // Clear the textbox
+            textbox.value = '';
+
+            let segments = window.location.pathname.split("?")[0].split("/");
+            let channelId = segments[segments.length-1];
+
+            // Send the API request
+            fetch(`https://discord.com/api/v9/channels/${channelId}/messages`, {
+                "method": "POST",
+                "headers": {
+                    "content-type": "application/json",
+                    "authorization": token
+                },
+                "body": JSON.stringify({
+                    content: inputValue
+                }),
+                "credentials": "include"
+            })
+            // .then(response => response.json())
+            // .then(data => console.log('API Response:', data))
+            // .catch(error => console.error('API Error:', error));
         }
     });
 }
@@ -54,6 +100,8 @@ function handleChatContainerAppearance(mutationsList, observer) {
                 let messageObserver = new MutationObserver(handleNewMessage);
                 messageObserver.observe(chatContainer, { childList: true, subtree: true });
 
+                setupTextbox();
+
                 // Disconnect this observer since we no longer need it
                 observer.disconnect();
                 return;
@@ -66,6 +114,29 @@ function handleChatContainerAppearance(mutationsList, observer) {
 // main code to run on script init
 (function() {
 
+    // Override the global XMLHttpRequest constructor
+    const _XMLHttpRequest = window.XMLHttpRequest;
+    window.XMLHttpRequest = function() {
+        // Create a new instance of XMLHttpRequest
+        const xhr = new _XMLHttpRequest();
+
+        // Override the setRequestHeader method
+        const _setRequestHeader = xhr.setRequestHeader;
+        xhr.setRequestHeader = function(header, value) {
+            // Intercept the setRequestHeader method
+            if (header === "Authorization") {
+                // console.log("Got Authorization", value);
+                token = value;
+                window.XMLHttpRequest = _XMLHttpRequest; // we don't need this any more
+            }
+            // Call the original setRequestHeader method
+            _setRequestHeader.apply(this, arguments);
+        };
+
+        // Return the modified instance of XMLHttpRequest
+        return xhr;
+    };
+
     let observer = new MutationObserver(handleChatContainerAppearance);
     observer.observe(document.body, { childList: true, subtree: true });
 
@@ -76,6 +147,14 @@ function handleChatContainerAppearance(mutationsList, observer) {
     .messageContent__21e69 {
         /*position: relative;
         display: inline-block;*/
+    }
+
+    .encryptInput {
+        border: none;
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 0.5em;
+        padding-left: 1em;
     }
 
     .encrypted {
