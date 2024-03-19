@@ -1,11 +1,9 @@
-// ==UserScript==
-// @name         Discord Message Encryption
-// @description  Encrypts messages before sending, decrypts received messages
-// @version      0.1
-// @author       Daniel Farushev
-// @match        https://discord.com/*
-// @grant        none
-// ==/UserScript==
+import * as pkijs from 'pkijs';
+
+
+// Create certificate
+const certificate = new pkijs.Certificate();
+console.log('cert', certificate);
 
 
 // Placeholder "encryption" for now just to see things happening

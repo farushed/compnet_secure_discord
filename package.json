@@ -1,0 +1,20 @@
+{
+  "name": "compnet_secure_discord",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4",
+    "webpack-userscript": "^3.2.2"
+  },
+  "dependencies": {
+    "pkijs": "^3.0.16"
+  }
+}
