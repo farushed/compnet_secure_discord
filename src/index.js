@@ -1,9 +1,4 @@
-import * as pkijs from 'pkijs';
-
-
-// Create certificate
-const certificate = new pkijs.Certificate();
-console.log('cert', certificate);
+import { generateCertificate } from './crypto'
 
 
 // Placeholder "encryption" for now just to see things happening
@@ -45,6 +40,27 @@ function handleNewMessage(mutationsList, observer) {
 // We'll get token by listening to an outgoing request that sets the Authorization header
 let token = null;
 
+function sendMessage(message) {
+    let segments = window.location.pathname.split("?")[0].split("/");
+    let channelId = segments[segments.length-1];
+
+    // Send the API request
+    fetch(`https://discord.com/api/v9/channels/${channelId}/messages`, {
+        "method": "POST",
+        "headers": {
+            "content-type": "application/json",
+            "authorization": token
+        },
+        "body": JSON.stringify({
+            content: message
+        }),
+        "credentials": "include"
+    })
+    // .then(response => response.json())
+    // .then(data => console.log('API Response:', data))
+    // .catch(error => console.error('API Error:', error));
+}
+
 function setupTextbox() {
     let textbox = document.createElement('input');
     textbox.classList.add('encryptInput', 'markup_a7e664', 'editor__66464', 'fontSize16Padding__48818', 'themedBackground__6b1b6', 'scrollableContainer__33e06')
@@ -55,35 +71,23 @@ function setupTextbox() {
     formDiv.prepend(textbox);
 
     // Add event listener to the textbox for keydown event
-    textbox.addEventListener('keydown', function(event) {
+    textbox.addEventListener('keydown', async function(event) {
         if (event.key === "Enter") {
             event.preventDefault();
 
             // Get the value of the textbox
             let inputValue = textbox.value;
-            inputValue = encrypt(inputValue);
-
             // Clear the textbox
             textbox.value = '';
 
-            let segments = window.location.pathname.split("?")[0].split("/");
-            let channelId = segments[segments.length-1];
+            if (inputValue === '!gc') {
+                inputValue = await generateCertificate();
+            } else {
+                inputValue = encrypt(inputValue);
+            }
 
-            // Send the API request
-            fetch(`https://discord.com/api/v9/channels/${channelId}/messages`, {
-                "method": "POST",
-                "headers": {
-                    "content-type": "application/json",
-                    "authorization": token
-                },
-                "body": JSON.stringify({
-                    content: inputValue
-                }),
-                "credentials": "include"
-            })
-            // .then(response => response.json())
-            // .then(data => console.log('API Response:', data))
-            // .catch(error => console.error('API Error:', error));
+            console.log('sending', inputValue);
+            sendMessage(inputValue);
         }
     });
 }
