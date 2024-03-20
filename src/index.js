@@ -21,16 +21,24 @@ function handleNewMessage(mutationsList, observer) {
                     let messageNode = node.querySelector('.messageContent__21e69');
                     // console.log('New message:', messageNode);
 
-                    let origSpan = messageNode.querySelector('span');
-                    origSpan.classList.add('encrypted')
+                    // check for the specific format of our messages
+                    if (messageNode.children.length === 2 &&
+                        messageNode.children[0].tagName.toLowerCase() === 'span' &&
+                        messageNode.children[0].innerText.trim() === '~' &&
+                        messageNode.children[1].tagName.toLowerCase() === 'code') {
 
-                    let text = origSpan.textContent;
+                        messageNode.classList.add('encrypted')
+                        messageNode.children[0].classList.add('encrypted')
+                        messageNode.children[1].classList.add('encrypted')
 
-                    let decrypted = document.createElement('p');
-                    decrypted.classList.add('decrypted')
-                    decrypted.textContent = decrypt(text);
+                        let text = messageNode.children[1].innerText;
 
-                    messageNode.appendChild(decrypted); // add after original message span
+                        let decrypted = document.createElement('p');
+                        decrypted.classList.add('decrypted')
+                        decrypted.textContent = decrypt(text);
+
+                        messageNode.appendChild(decrypted); // add after original message span
+                    }
                 }
             });
         }
@@ -43,6 +51,9 @@ let token = null;
 function sendMessage(message) {
     let segments = window.location.pathname.split("?")[0].split("/");
     let channelId = segments[segments.length-1];
+
+    // start with ~ (just as a flag), then surround in code block
+    message = '~`' + message.replace('`', '\\`') + '`'
 
     // Send the API request
     fetch(`https://discord.com/api/v9/channels/${channelId}/messages`, {
@@ -159,7 +170,19 @@ function handleChatContainerAppearance(mutationsList, observer) {
         padding-left: 1em;
     }
 
-    .encrypted {
+    .markup_a7e664.messageContent__21e69 {
+        background-color: rgba(255, 100, 100, 0.05);
+        border-radius: 5px;
+        background-clip: content-box;
+    }
+
+    .markup_a7e664.messageContent__21e69.encrypted {
+        background-color: rgba(100, 255, 100, 0.05);
+        border-radius: 5px;
+        background-clip: content-box;
+    }
+
+    span.encrypted, code.encrypted.inline {
         color: #cccc;
         font-size: 0.5em;
     }
