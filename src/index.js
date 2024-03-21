@@ -127,28 +127,20 @@ function handleChatContainerAppearance(mutationsList, observer) {
 // main code to run on script init
 (function() {
 
-    // Override the global XMLHttpRequest constructor
-    const _XMLHttpRequest = window.XMLHttpRequest;
-    window.XMLHttpRequest = function() {
-        // Create a new instance of XMLHttpRequest
-        const xhr = new _XMLHttpRequest();
+    // Restore localStorage that discord deletes
+    // taken from https://stackoverflow.com/a/53773662
+    function getLocalStoragePropertyDescriptor() {
+        const iframe = document.createElement('iframe');
+        document.head.append(iframe);
+        const pd = Object.getOwnPropertyDescriptor(iframe.contentWindow, 'localStorage');
+        iframe.remove();
+        return pd;
+    }
+    Object.defineProperty(window, 'localStorage', getLocalStoragePropertyDescriptor());
 
-        // Override the setRequestHeader method
-        const _setRequestHeader = xhr.setRequestHeader;
-        xhr.setRequestHeader = function(header, value) {
-            // Intercept the setRequestHeader method
-            if (header === "Authorization") {
-                // console.log("Got Authorization", value);
-                token = value;
-                window.XMLHttpRequest = _XMLHttpRequest; // we don't need this any more
-            }
-            // Call the original setRequestHeader method
-            _setRequestHeader.apply(this, arguments);
-        };
+    // Now we can retrieve the token from localstorage
+    token = localStorage.getItem("token").replace(/^"|"$/g, ''); // trim " from start and end
 
-        // Return the modified instance of XMLHttpRequest
-        return xhr;
-    };
 
     let observer = new MutationObserver(handleChatContainerAppearance);
     observer.observe(document.body, { childList: true, subtree: true });
