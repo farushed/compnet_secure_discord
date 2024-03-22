@@ -1,4 +1,5 @@
 import { generateCertificate } from './crypto'
+import { setupCSS } from './styling';
 
 
 // Placeholder "encryption" for now just to see things happening
@@ -27,17 +28,14 @@ function handleNewMessage(mutationsList, observer) {
                         messageNode.children[0].innerText.trim() === '~' &&
                         messageNode.children[1].tagName.toLowerCase() === 'code') {
 
-                        messageNode.classList.add('encrypted')
-                        messageNode.children[0].classList.add('encrypted')
-                        messageNode.children[1].classList.add('encrypted')
 
                         let text = messageNode.children[1].innerText;
+                        let decrypted = decrypt(text);
 
-                        let decrypted = document.createElement('p');
-                        decrypted.classList.add('decrypted')
-                        decrypted.textContent = decrypt(text);
-
-                        messageNode.appendChild(decrypted); // add after original message span
+                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`
+                        messageNode.classList.add('encrypted')
+                    } else {
+                        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`
                     }
                 }
             });
@@ -146,43 +144,5 @@ function handleChatContainerAppearance(mutationsList, observer) {
     observer.observe(document.body, { childList: true, subtree: true });
 
 
-    // Add some css in a style element to the document head
-    var styleElement = document.createElement('style');
-    styleElement.textContent = `
-    .messageContent__21e69 {
-        /*position: relative;
-        display: inline-block;*/
-    }
-
-    .encryptInput {
-        border: none;
-        width: 100%;
-        box-sizing: border-box;
-        margin-bottom: 0.5em;
-        padding-left: 1em;
-    }
-
-    .markup_a7e664.messageContent__21e69 {
-        background-color: rgba(255, 100, 100, 0.05);
-        border-radius: 5px;
-        background-clip: content-box;
-    }
-
-    .markup_a7e664.messageContent__21e69.encrypted {
-        background-color: rgba(100, 255, 100, 0.05);
-        border-radius: 5px;
-        background-clip: content-box;
-    }
-
-    span.encrypted, code.encrypted.inline {
-        color: #cccc;
-        font-size: 0.5em;
-    }
-
-    .decrypted {
-        margin: 0;
-    }
-    `;
-    document.head.appendChild(styleElement);
-
+    setupCSS();
 })();
