@@ -1,4 +1,4 @@
-import { generateCertificate } from './crypto'
+import { generateCertificate, generateKeyPair, loadKeyPair, storeKeyPair } from './crypto'
 import { setupCSS } from './styling';
 
 
@@ -46,6 +46,8 @@ function handleNewMessage(mutationsList, observer) {
 // We'll get token by listening to an outgoing request that sets the Authorization header
 let token = null;
 
+let keyPair = null;
+
 function sendMessage(message) {
     let segments = window.location.pathname.split("?")[0].split("/");
     let channelId = segments[segments.length-1];
@@ -89,8 +91,13 @@ function setupTextbox() {
             // Clear the textbox
             textbox.value = '';
 
-            if (inputValue === '!gc') {
-                inputValue = await generateCertificate();
+            if (inputValue === '!gk') {
+                keyPair = await generateKeyPair();
+                console.log("generated key pair", keyPair);
+                storeKeyPair(keyPair);
+                return;
+            } else if (inputValue === '!gc') {
+                inputValue = generateCertificate(keyPair);
             } else {
                 inputValue = encrypt(inputValue);
             }
@@ -139,6 +146,12 @@ function handleChatContainerAppearance(mutationsList, observer) {
     // Now we can retrieve the token from localstorage
     token = localStorage.getItem("token").replace(/^"|"$/g, ''); // trim " from start and end
 
+    try {
+        keyPair = loadKeyPair();
+        console.log("loaded keypair", keyPair);
+    } catch (e) {
+        console.error("failed to load keypair", e);
+    }
 
     let observer = new MutationObserver(handleChatContainerAppearance);
     observer.observe(document.body, { childList: true, subtree: true });

@@ -1,59 +1,57 @@
-import * as pkijs from 'pkijs';
-import * as asn1js from 'asn1js';
+const forge = require('node-forge');
 
-
-const crypto = pkijs.getCrypto(true);
-
-export async function generateCertificate() {
-    // from https://pkijs.org/docs/examples/certificates-and-revocation/create-and-validate-certificate/
-    const certificate = new pkijs.Certificate();
-    certificate.version = 2;
-    certificate.serialNumber = new asn1js.Integer({ value: 1 });
-    certificate.issuer.typesAndValues.push(new pkijs.AttributeTypeAndValue({
-        type: "2.5.4.3", // Common name
-        value: new asn1js.BmpString({ value: "Test issuer" })
-    }));
-    certificate.subject.typesAndValues.push(new pkijs.AttributeTypeAndValue({
-        type: "2.5.4.3", // Common name
-        value: new asn1js.BmpString({ value: "Test subject" })
-    }));
-    
-    certificate.notBefore.value = new Date();
-    const notAfter = new Date();
-    notAfter.setUTCFullYear(notAfter.getUTCFullYear() + 1);
-    certificate.notAfter.value = notAfter;
-
-
-    const algorithm = pkijs.getAlgorithmParameters("RSASSA-PKCS1-v1_5", "generateKey");
-    if ("hash" in algorithm.algorithm) {
-        algorithm.algorithm.hash.name = "SHA-256";
-    }
-    const keys = await crypto.generateKey(algorithm.algorithm, true, algorithm.usages);
-
-
-    // Exporting public key into "subjectPublicKeyInfo" value of certificate
-    await certificate.subjectPublicKeyInfo.importKey(keys.publicKey);
-
-    // Signing final certificate
-    await certificate.sign(keys.privateKey, "SHA-256");
-
-
-    // Convert ASN.1 structure to BER
-    const ber = certificate.toSchema().toBER();
-
-    // Base64 encode BER to PEM format
-    const base64Ber = arrayBufferToBase64(ber);
-    const pemString = `-----BEGIN CERTIFICATE-----\n${base64Ber}\n-----END CERTIFICATE-----`;
-
-    return pemString;
+export function generateKeyPair() {
+    return new Promise((resolve, reject) => {
+        forge.pki.rsa.generateKeyPair({ bits: 2048, workers: 2 }, (err, keyPair) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(keyPair);
+            }
+        });
+    });
 }
 
-function arrayBufferToBase64(buffer) {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
+export function storeKeyPair(keyPair) {
+    let priv = forge.pki.privateKeyToPem(keyPair.privateKey);
+    let pub = forge.pki.publicKeyToPem(keyPair.publicKey);
+
+    localStorage.setItem('k_priv', priv);
+    localStorage.setItem('k_pub', pub);
+}
+
+export function loadKeyPair() {
+    let priv = localStorage.getItem('k_priv');
+    let pub = localStorage.getItem('k_pub');
+
+    return {
+        privateKey: forge.pki.privateKeyFromPem(priv),
+        publicKey: forge.pki.publicKeyFromPem(pub)
     }
-    return btoa(binary);
+}
+
+export function generateCertificate(keyPair) {
+    let cert = forge.pki.createCertificate();
+    cert.publicKey = keyPair.publicKey;
+
+    cert.serialNumber = '01';
+    cert.validity.notBefore = new Date();
+    cert.validity.notAfter = new Date();
+    cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+
+    var attrs = [{
+        name: 'commonName',
+        value: 'test issuer'
+    }];
+    cert.setSubject(attrs);
+    cert.setIssuer(attrs);
+
+    // self-sign certificate
+    cert.sign(keyPair.privateKey);
+
+    console.log(cert);
+
+    let x =  forge.pki.certificateToPem(cert);
+    console.log(x)
+    return x
 }
