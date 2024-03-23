@@ -1,15 +1,10 @@
-import { generateCertificate, generateKeyPair, loadKeyPair, storeKeyPair } from './crypto'
+import { generateCertificate, generateKeyPair, loadKeyPair, storeKeyPair, generateSymmetricKey, encrypt, decrypt } from './crypto'
 import { setupCSS } from './styling';
 
 
-// Placeholder "encryption" for now just to see things happening
-function encrypt(text) {
-    return text.split('').reverse().join('');
-}
-
-function decrypt(text) {
-    return text.split('').reverse().join('');
-}
+let token = null;
+let keyPair = null;
+let symmetricKey = null;
 
 
 function handleNewMessage(mutationsList, observer) {
@@ -23,19 +18,25 @@ function handleNewMessage(mutationsList, observer) {
                     // console.log('New message:', messageNode);
 
                     // check for the specific format of our messages
-                    if (messageNode.children.length === 2 &&
-                        messageNode.children[0].tagName.toLowerCase() === 'span' &&
-                        messageNode.children[0].innerText.trim() === '~' &&
-                        messageNode.children[1].tagName.toLowerCase() === 'code') {
+                    let formatCorrect = messageNode.children.length === 2
+                                    && messageNode.children[0].tagName.toLowerCase() === 'span'
+                                    && messageNode.children[0].innerText.trim() === '~'
+                                    && messageNode.children[1].tagName.toLowerCase() === 'code';
 
-
-                        let text = messageNode.children[1].innerText;
-                        let decrypted = decrypt(text);
-
-                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`
-                        messageNode.classList.add('encrypted')
-                    } else {
-                        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`
+                    let text = formatCorrect ? messageNode.children[1].innerText : undefined;
+                    if (formatCorrect && text.startsWith('-----BEGIN')) {
+                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
+                        messageNode.classList.add('control');
+                    }
+                    else if (formatCorrect && symmetricKey) {
+                        let decrypted = decrypt(symmetricKey, text);
+                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
+                        messageNode.classList.add('encrypted');
+                    }
+                    else {
+                        // wrap for styling purposes
+                        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
+                        messageNode.classList.add('plaintext');
                     }
                 }
             });
@@ -43,10 +44,6 @@ function handleNewMessage(mutationsList, observer) {
     });
 }
 
-// We'll get token by listening to an outgoing request that sets the Authorization header
-let token = null;
-
-let keyPair = null;
 
 function sendMessage(message) {
     let segments = window.location.pathname.split("?")[0].split("/");
@@ -91,15 +88,26 @@ function setupTextbox() {
             // Clear the textbox
             textbox.value = '';
 
-            if (inputValue === '!gk') {
+            if (inputValue === '!keypair') {
                 keyPair = await generateKeyPair();
                 console.log("generated key pair", keyPair);
                 storeKeyPair(keyPair);
                 return;
-            } else if (inputValue === '!gc') {
+            }
+            else if (inputValue === '!cert') {
                 inputValue = generateCertificate(keyPair);
-            } else {
-                inputValue = encrypt(inputValue);
+            }
+            else if (inputValue === '!symkey') {
+                symmetricKey = generateSymmetricKey();
+                console.log('generated symmetric key', symmetricKey);
+                return;
+            }
+            else {
+                if (symmetricKey) {
+                    inputValue = encrypt(symmetricKey, inputValue);
+                } else {
+                    inputValue = "- no key -"
+                }
             }
 
             console.log('sending', inputValue);

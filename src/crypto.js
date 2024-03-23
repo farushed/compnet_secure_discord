@@ -55,3 +55,50 @@ export function generateCertificate(keyPair) {
     console.log(x)
     return x
 }
+
+
+export function generateSymmetricKey() {
+    return forge.random.getBytesSync(16);
+}
+
+const ivLength = 16;
+
+function generateIV() {
+    return forge.random.getBytesSync(ivLength);
+}
+
+function _encrypt(key, iv, message) {
+    let cipher = forge.cipher.createCipher('AES-CTR', key);
+
+    cipher.start({iv: iv})
+    cipher.update(forge.util.createBuffer(message));
+    cipher.finish()
+
+    return cipher.output.bytes();
+}
+
+function _decrypt(key, iv, encrypted) {
+    let decipher = forge.cipher.createDecipher('AES-CTR', key);
+
+    decipher.start({iv: iv});
+    decipher.update(forge.util.createBuffer(encrypted));
+
+    let result = decipher.finish()
+
+    return decipher.output.bytes();
+}
+
+
+export function encrypt(key, message) {
+    let iv = generateIV();
+    let encrypted = _encrypt(key, iv, message);
+
+    return forge.util.encode64(iv + encrypted);
+}
+
+export function decrypt(key, message) {
+    let encrypted = forge.util.decode64(message);
+    let decrypted = _decrypt(key, encrypted.slice(0, ivLength), encrypted.slice(ivLength));
+
+    return decrypted;
+}
