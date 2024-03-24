@@ -1,10 +1,11 @@
-import { generateCertificate, generateKeyPair, loadKeyPair, storeKeyPair, generateSymmetricKey, encrypt, decrypt } from './crypto'
+import * as crypto from './crypto'
 import { setupCSS } from './styling';
 
 
 let token = null;
 let keyPair = null;
 let symmetricKey = null;
+let latestCertByIssuer = null;
 
 
 function handleNewMessage(mutationsList, observer) {
@@ -25,11 +26,14 @@ function handleNewMessage(mutationsList, observer) {
 
                     let text = formatCorrect ? messageNode.children[1].innerText : undefined;
                     if (formatCorrect && text.startsWith('-----BEGIN')) {
+                        if (crypto.addCertificate(text, latestCertByIssuer)) {
+                            crypto.storeCertificates(latestCertByIssuer); // only store if something changed
+                        }
                         messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
                         messageNode.classList.add('control');
                     }
                     else if (formatCorrect && symmetricKey) {
-                        let decrypted = decrypt(symmetricKey, text);
+                        let decrypted = crypto.decrypt(symmetricKey, text);
                         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
                         messageNode.classList.add('encrypted');
                     }
@@ -44,6 +48,9 @@ function handleNewMessage(mutationsList, observer) {
     });
 }
 
+function getUsername() {
+    return document.querySelector(".nameTag__0e320").querySelector(".hovered__243e5").textContent;
+}
 
 function sendMessage(message) {
     let segments = window.location.pathname.split("?")[0].split("/");
@@ -89,22 +96,23 @@ function setupTextbox() {
             textbox.value = '';
 
             if (inputValue === '!keypair') {
-                keyPair = await generateKeyPair();
+                keyPair = await crypto.generateKeyPair();
                 console.log("generated key pair", keyPair);
-                storeKeyPair(keyPair);
+                crypto.storeKeyPair(keyPair);
                 return;
             }
             else if (inputValue === '!cert') {
-                inputValue = generateCertificate(keyPair);
+                inputValue = crypto.generateCertificate(keyPair, getUsername());
+                console.log('generated cert', inputValue);
             }
             else if (inputValue === '!symkey') {
-                symmetricKey = generateSymmetricKey();
+                symmetricKey = crypto.generateSymmetricKey();
                 console.log('generated symmetric key', symmetricKey);
                 return;
             }
             else {
                 if (symmetricKey) {
-                    inputValue = encrypt(symmetricKey, inputValue);
+                    inputValue = crypto.encrypt(symmetricKey, inputValue);
                 } else {
                     inputValue = "- no key -"
                 }
@@ -138,7 +146,7 @@ function handleChatContainerAppearance(mutationsList, observer) {
 
 
 // main code to run on script init
-(function() {
+(async function() {
 
     // Restore localStorage that discord deletes
     // taken from https://stackoverflow.com/a/53773662
@@ -155,11 +163,20 @@ function handleChatContainerAppearance(mutationsList, observer) {
     token = localStorage.getItem("token").replace(/^"|"$/g, ''); // trim " from start and end
 
     try {
-        keyPair = loadKeyPair();
-        console.log("loaded keypair", keyPair);
+        keyPair = crypto.loadKeyPair();
+        if (keyPair) {
+            console.log("loaded keypair", keyPair);
+        }
+        else { // must not exist, so generate one!
+            keyPair = await crypto.generateKeyPair();
+            console.log("no key pair found, generated one", keyPair);
+            crypto.storeKeyPair(keyPair);
+        }
     } catch (e) {
         console.error("failed to load keypair", e);
     }
+
+    latestCertByIssuer = crypto.loadCertificates();
 
     let observer = new MutationObserver(handleChatContainerAppearance);
     observer.observe(document.body, { childList: true, subtree: true });
