@@ -32,6 +32,17 @@ function handleNewMessage(mutationsList, observer) {
                         messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
                         messageNode.classList.add('control');
                     }
+                    else if (formatCorrect && text.startsWith('_')) {
+                        let result = '';
+                        let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
+                        console.log(gd);
+                        if (gd) {
+                            symmetricKey = gd.key;
+                            result = 'Added to group'
+                        }
+                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
+                        messageNode.classList.add('control');
+                    }
                     else if (formatCorrect && symmetricKey) {
                         let decrypted = crypto.decrypt(symmetricKey, text);
                         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
@@ -99,27 +110,37 @@ function setupTextbox() {
                 keyPair = await crypto.generateKeyPair();
                 console.log("generated key pair", keyPair);
                 crypto.storeKeyPair(keyPair);
-                return;
             }
             else if (inputValue === '!cert') {
-                inputValue = crypto.generateCertificate(keyPair, getUsername());
-                console.log('generated cert', inputValue);
+                let c = crypto.generateCertificate(keyPair, getUsername());
+                console.log('generated cert', c);
+                sendMessage(c);
             }
             else if (inputValue === '!symkey') {
                 symmetricKey = crypto.generateSymmetricKey();
                 console.log('generated symmetric key', symmetricKey);
-                return;
             }
-            else {
-                if (symmetricKey) {
-                    inputValue = crypto.encrypt(symmetricKey, inputValue);
-                } else {
-                    inputValue = "- no key -"
+            else if (inputValue.startsWith('!add')) {
+                let users = inputValue.substring('!add'.length).trim().split(/\s+/);
+                for (const u of users) {
+                    let userCert = latestCertByIssuer.get(u);
+                    if (userCert) {
+                        let m = crypto.encryptGroupDataForCertificateIssuer(userCert, {
+                            key: symmetricKey
+                        })
+                        sendMessage('_' + m); // _ to separate from other message types
+                    }
                 }
             }
-
-            console.log('sending', inputValue);
-            sendMessage(inputValue);
+            else {
+                if (!symmetricKey) {
+                    alert('No group/symmetric key in place yet');
+                    return;
+                }
+                inputValue = crypto.encrypt(symmetricKey, inputValue);
+                console.log('sending', inputValue);
+                sendMessage(inputValue);
+            }
         }
     });
 }

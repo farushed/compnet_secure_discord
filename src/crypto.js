@@ -100,6 +100,25 @@ export function loadCertificates() {
     return certs;
 }
 
+// takes the serializable object to be encrypted and a cert of the user we're sending it to
+export function encryptGroupDataForCertificateIssuer(cert, groupData) {
+    let encrypted = cert.publicKey.encrypt(JSON.stringify(groupData))
+
+    return forge.util.encode64(encrypted)
+}
+
+// parse and return the object that was encrypted with our public key
+export function decryptGroupDataWithPrivateKey(privateKey, message) {
+    let encrypted = forge.util.decode64(message);
+
+    try {
+        let decrypted = privateKey.decrypt(encrypted); // will throw if it's invalid
+        return JSON.parse(decrypted)
+    } catch {
+        return null;
+    }
+}
+
 
 export function generateSymmetricKey() {
     return forge.random.getBytesSync(16);
