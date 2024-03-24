@@ -70,9 +70,9 @@ function generateIV() {
 function _encrypt(key, iv, message) {
     let cipher = forge.cipher.createCipher('AES-CTR', key);
 
-    cipher.start({iv: iv})
-    cipher.update(forge.util.createBuffer(message));
-    cipher.finish()
+    cipher.start({iv: iv});
+    cipher.update(forge.util.createBuffer(message, 'raw'));
+    cipher.finish();
 
     return cipher.output.bytes();
 }
@@ -83,15 +83,17 @@ function _decrypt(key, iv, encrypted) {
     decipher.start({iv: iv});
     decipher.update(forge.util.createBuffer(encrypted));
 
-    let result = decipher.finish()
+    let result = decipher.finish();
 
     return decipher.output.bytes();
 }
 
 
 export function encrypt(key, message) {
+    let encoded = forge.util.encodeUtf8(message);
+
     let iv = generateIV();
-    let encrypted = _encrypt(key, iv, message);
+    let encrypted = _encrypt(key, iv, encoded);
 
     return forge.util.encode64(iv + encrypted);
 }
@@ -100,5 +102,5 @@ export function decrypt(key, message) {
     let encrypted = forge.util.decode64(message);
     let decrypted = _decrypt(key, encrypted.slice(0, ivLength), encrypted.slice(ivLength));
 
-    return decrypted;
+    return forge.util.decodeUtf8(decrypted);
 }
