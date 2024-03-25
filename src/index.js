@@ -8,6 +8,45 @@ let symmetricKey = null;
 let latestCertByIssuer = null;
 
 
+function processMessage(messageNode) {
+    // check for the specific format of our messages
+    let formatCorrect = messageNode.children.length === 2
+                    && messageNode.children[0].tagName.toLowerCase() === 'span'
+                    && messageNode.children[0].innerText.trim() === '~'
+                    && messageNode.children[1].tagName.toLowerCase() === 'code';
+
+    let text = formatCorrect ? messageNode.children[1].innerText : undefined;
+    if (formatCorrect && text.startsWith('-----BEGIN')) {
+        if (crypto.addCertificate(text, latestCertByIssuer)) {
+            crypto.storeCertificates(latestCertByIssuer); // only store if something changed
+        }
+        messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
+        messageNode.classList.add('control');
+    }
+    else if (formatCorrect && text.startsWith('_')) {
+        let result = '';
+        let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
+        console.log(gd);
+        if (gd) {
+            symmetricKey = gd.key;
+            result = 'Added to group'
+        }
+        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
+        messageNode.classList.add('control');
+    }
+    else if (formatCorrect && symmetricKey) {
+        let decrypted = crypto.decrypt(symmetricKey, text);
+        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
+        messageNode.classList.add('encrypted');
+    }
+    else {
+        // wrap for styling purposes
+        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
+        messageNode.classList.add('plaintext');
+    }
+}
+
+// Listen to new messages being added, and process them
 function handleNewMessage(mutationsList, observer) {
     // console.log(mutationsList, observer)
 
@@ -17,42 +56,7 @@ function handleNewMessage(mutationsList, observer) {
                 if (node.classList && node.classList.contains('messageListItem__6a4fb')) { // Check if new node is a message
                     let messageNode = node.querySelector('.messageContent__21e69');
                     // console.log('New message:', messageNode);
-
-                    // check for the specific format of our messages
-                    let formatCorrect = messageNode.children.length === 2
-                                    && messageNode.children[0].tagName.toLowerCase() === 'span'
-                                    && messageNode.children[0].innerText.trim() === '~'
-                                    && messageNode.children[1].tagName.toLowerCase() === 'code';
-
-                    let text = formatCorrect ? messageNode.children[1].innerText : undefined;
-                    if (formatCorrect && text.startsWith('-----BEGIN')) {
-                        if (crypto.addCertificate(text, latestCertByIssuer)) {
-                            crypto.storeCertificates(latestCertByIssuer); // only store if something changed
-                        }
-                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
-                        messageNode.classList.add('control');
-                    }
-                    else if (formatCorrect && text.startsWith('_')) {
-                        let result = '';
-                        let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
-                        console.log(gd);
-                        if (gd) {
-                            symmetricKey = gd.key;
-                            result = 'Added to group'
-                        }
-                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
-                        messageNode.classList.add('control');
-                    }
-                    else if (formatCorrect && symmetricKey) {
-                        let decrypted = crypto.decrypt(symmetricKey, text);
-                        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
-                        messageNode.classList.add('encrypted');
-                    }
-                    else {
-                        // wrap for styling purposes
-                        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
-                        messageNode.classList.add('plaintext');
-                    }
+                    processMessage(messageNode);
                 }
             });
         }
@@ -145,21 +149,37 @@ function setupTextbox() {
     });
 }
 
+
+let curChatContainer = null;
+let curMessageObserver = null;
+
 // setup message observer only after the relevant element gets loaded in
 function handleChatContainerAppearance(mutationsList, observer) {
     for (var mutation of mutationsList) {
         if (mutation.type === 'childList') {
+            // the chat container gets removed and readded when switching channels, so just check for it changing
             let chatContainer = document.querySelector('.messagesWrapper_ea2b0b');
-            if (chatContainer) {
+            if (chatContainer != curChatContainer) {
+                console.log('new container', chatContainer)
+                curChatContainer = chatContainer;
+
+                // If we were observing the prervious chat container, stop
+                if (curMessageObserver) {
+                    curMessageObserver.disconnect();
+                }
                 // Observe the chat container for mutations
-                let messageObserver = new MutationObserver(handleNewMessage);
-                messageObserver.observe(chatContainer, { childList: true, subtree: true });
+                curMessageObserver = new MutationObserver(handleNewMessage);
+                curMessageObserver.observe(chatContainer, { childList: true, subtree: true });
+
+                // process each message that already exists, in case the container starts with messages
+                // eg on switch to a channel that was already loaded previously
+                let messageNodes = chatContainer.querySelectorAll('.messageContent__21e69');
+                console.log(messageNodes);
+                for (const messageNode of messageNodes) {
+                    processMessage(messageNode);
+                }
 
                 setupTextbox();
-
-                // Disconnect this observer since we no longer need it
-                observer.disconnect();
-                return;
             }
         }
     }
