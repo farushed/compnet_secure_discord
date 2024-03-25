@@ -119,8 +119,22 @@ export function decryptGroupDataWithPrivateKey(privateKey, message) {
     }
 }
 
+export function generateGroupData() {
+    let key = generateSymmetricKey();
+    // generate a version number from the hash
+    let md = forge.md.sha256.create();
+    md.update(key);
+    let ver = md.digest().bytes().slice(0, 4); // take just 32 bits
 
-export function generateSymmetricKey() {
+    return {
+        key,
+        ver,
+        ts: new Date().getTime(),
+    }
+}
+
+
+function generateSymmetricKey() {
     return forge.random.getBytesSync(16);
 }
 
@@ -152,18 +166,30 @@ function _decrypt(key, iv, encrypted) {
 }
 
 
-export function encrypt(key, message) {
+export function encrypt(groupData, message) {
     let encoded = forge.util.encodeUtf8(message);
 
     let iv = generateIV();
-    let encrypted = _encrypt(key, iv, encoded);
+    let encrypted = _encrypt(groupData.key, iv, encoded);
 
-    return forge.util.encode64(iv + encrypted);
+    return forge.util.encode64(groupData.ver)
+        + ':' + forge.util.encode64(iv)
+        + ':' + forge.util.encode64(encrypted);
 }
 
-export function decrypt(key, message) {
-    let encrypted = forge.util.decode64(message);
-    let decrypted = _decrypt(key, encrypted.slice(0, ivLength), encrypted.slice(ivLength));
+export function decrypt(groupDataList, message) {
+    console.log('decrypting', message, groupDataList);
+    let parts = message.split(':');
+    let ver       = forge.util.decode64(parts[0]);
+    let iv        = forge.util.decode64(parts[1]);
+    let encrypted = forge.util.decode64(parts[2]);
 
-    return forge.util.decodeUtf8(decrypted);
+    for (const groupData of groupDataList) {
+        if (ver === groupData.ver) { // pray and hope there's no collisions
+            let decrypted = _decrypt(groupData.key, iv, encrypted);
+            return forge.util.decodeUtf8(decrypted);
+        }
+    }
+
+    throw Error('Could not decrypt');
 }

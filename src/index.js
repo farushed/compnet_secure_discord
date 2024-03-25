@@ -4,7 +4,8 @@ import { setupCSS } from './styling';
 
 let token = null;
 let keyPair = null;
-let symmetricKey = null;
+let groupDataList = [];
+let currentGroupData = null;
 let latestCertByIssuer = null;
 
 
@@ -28,16 +29,25 @@ function processMessage(messageNode) {
         let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
         console.log(gd);
         if (gd) {
-            symmetricKey = gd.key;
+            groupDataList.unshift(gd);
+            // for now just assume that the latest group data is the one we should keep active
+            if (!currentGroupData || gd.ts > currentGroupData.ts) {
+                currentGroupData = gd;
+            }
             result = 'Added to group'
         }
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
         messageNode.classList.add('control');
     }
-    else if (formatCorrect && symmetricKey) {
-        let decrypted = crypto.decrypt(symmetricKey, text);
-        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
-        messageNode.classList.add('encrypted');
+    else if (formatCorrect && groupDataList) {
+        try {
+            let decrypted = crypto.decrypt(groupDataList, text);
+            messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
+            messageNode.classList.add('encrypted');
+        } catch { // if there's an error decrypting, just treat as plaintext
+            messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
+            messageNode.classList.add('plaintext');
+        }
     }
     else {
         // wrap for styling purposes
@@ -56,6 +66,7 @@ function handleNewMessage(mutationsList, observer) {
                 if (node.classList && node.classList.contains('messageListItem__6a4fb')) { // Check if new node is a message
                     let messageNode = node.querySelector('.messageContent__21e69');
                     // console.log('New message:', messageNode);
+
                     processMessage(messageNode);
                 }
             });
@@ -120,28 +131,27 @@ function setupTextbox() {
                 console.log('generated cert', c);
                 sendMessage(c);
             }
-            else if (inputValue === '!symkey') {
-                symmetricKey = crypto.generateSymmetricKey();
-                console.log('generated symmetric key', symmetricKey);
+            else if (inputValue === '!newgroup') {
+                currentGroupData = crypto.generateGroupData();
+                groupDataList.unshift(currentGroupData);
+                console.log('created new group', currentGroupData);
             }
             else if (inputValue.startsWith('!add')) {
                 let users = inputValue.substring('!add'.length).trim().split(/\s+/);
                 for (const u of users) {
                     let userCert = latestCertByIssuer.get(u);
                     if (userCert) {
-                        let m = crypto.encryptGroupDataForCertificateIssuer(userCert, {
-                            key: symmetricKey
-                        })
+                        let m = crypto.encryptGroupDataForCertificateIssuer(userCert, currentGroupData)
                         sendMessage('_' + m); // _ to separate from other message types
                     }
                 }
             }
             else {
-                if (!symmetricKey) {
+                if (!currentGroupData) {
                     alert('No group/symmetric key in place yet');
                     return;
                 }
-                inputValue = crypto.encrypt(symmetricKey, inputValue);
+                inputValue = crypto.encrypt(currentGroupData, inputValue);
                 console.log('sending', inputValue);
                 sendMessage(inputValue);
             }
