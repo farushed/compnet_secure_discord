@@ -144,25 +144,32 @@ function generateIV() {
     return forge.random.getBytesSync(ivLength);
 }
 
+
 function _encrypt(key, iv, message) {
-    let cipher = forge.cipher.createCipher('AES-CTR', key);
+    let cipher = forge.cipher.createCipher('AES-GCM', key);
 
     cipher.start({iv: iv});
     cipher.update(forge.util.createBuffer(message, 'raw'));
     cipher.finish();
 
-    return cipher.output.bytes();
+    return {
+        ciphertext: cipher.output.bytes(),
+        tag: cipher.mode.tag.bytes()
+    };
 }
 
-function _decrypt(key, iv, encrypted) {
-    let decipher = forge.cipher.createDecipher('AES-CTR', key);
+function _decrypt(key, iv, encrypted, tag) {
+    let decipher = forge.cipher.createDecipher('AES-GCM', key);
 
-    decipher.start({iv: iv});
+    decipher.start({iv: iv, tag: tag});
     decipher.update(forge.util.createBuffer(encrypted));
 
     let result = decipher.finish();
+    if (result) {
+        return decipher.output.bytes();
+    }
 
-    return decipher.output.bytes();
+    throw Error('Decryption failed');
 }
 
 
@@ -170,11 +177,12 @@ export function encrypt(groupData, message) {
     let encoded = forge.util.encodeUtf8(message);
 
     let iv = generateIV();
-    let encrypted = _encrypt(groupData.key, iv, encoded);
+    let { ciphertext: encrypted, tag } = _encrypt(groupData.key, iv, encoded);
 
     return forge.util.encode64(groupData.ver)
         + ':' + forge.util.encode64(iv)
-        + ':' + forge.util.encode64(encrypted);
+        + ':' + forge.util.encode64(encrypted)
+        + ':' + forge.util.encode64(tag);
 }
 
 export function decrypt(groupDataList, message) {
@@ -183,10 +191,11 @@ export function decrypt(groupDataList, message) {
     let ver       = forge.util.decode64(parts[0]);
     let iv        = forge.util.decode64(parts[1]);
     let encrypted = forge.util.decode64(parts[2]);
+    let tag       = forge.util.decode64(parts[3]);
 
     for (const groupData of groupDataList) {
         if (ver === groupData.ver) { // pray and hope there's no collisions
-            let decrypted = _decrypt(groupData.key, iv, encrypted);
+            let decrypted = _decrypt(groupData.key, iv, encrypted, tag);
             return forge.util.decodeUtf8(decrypted);
         }
     }
