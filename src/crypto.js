@@ -119,7 +119,8 @@ export function decryptGroupDataWithPrivateKey(privateKey, message) {
     }
 }
 
-export function generateGroupData() {
+// Creates a new groupData object with a new symmetric key
+export function generateGroupData(groupMembers) {
     let key = generateSymmetricKey();
     // generate a version number from the hash
     let md = forge.md.sha256.create();
@@ -129,9 +130,53 @@ export function generateGroupData() {
     return {
         key,
         ver,
+        mem: groupMembers,
         ts: new Date().getTime(),
     }
 }
+
+// Adds groupData object to the map if it's not already there (primary key = the symmetric group key)
+export function addGroupData(gd, groupDataByVer) {
+    let gdList = groupDataByVer.get(gd.ver);
+    if (gdList) {
+        if (gdList.some(x => x.key === gd.key)) { // don't add if a groupData with the same key already exists
+            return;
+        }
+        gdList.push(gd);
+    } else {
+        groupDataByVer.set(gd.ver, [gd]);
+    }
+}
+
+// Store the groupData map to localStorage as just the array of groupData objects
+export function storeGroupData(groupDataByVer) {
+    localStorage.setItem('my_groups', JSON.stringify(
+        Array.from(groupDataByVer.values()).flat()
+    ));
+}
+
+// Get the list of groupData from localStorage, and represent it as a map. If not found, create an empty one.
+// Returns a map of version to group data
+export function loadGroupData() {
+    let groupDataByVer = new Map();
+
+    let stored = localStorage.getItem('my_groups');
+    if (stored) {
+        let groupDataObjects = JSON.parse(stored);
+        groupDataObjects.forEach(gd => addGroupData(gd, groupDataByVer));
+    }
+
+    return groupDataByVer;
+}
+
+export function storeCurrentGroupData(currentGroupData) {
+    localStorage.setItem('my_cur_group', JSON.stringify(currentGroupData));
+}
+
+export function loadCurrentGroupData() {
+    return JSON.parse(localStorage.getItem('my_cur_group'));
+}
+
 
 
 function generateSymmetricKey() {
@@ -185,19 +230,18 @@ export function encrypt(groupData, message) {
         + ':' + forge.util.encode64(tag);
 }
 
-export function decrypt(groupDataList, message) {
-    console.log('decrypting', message, groupDataList);
+export function decrypt(groupDataByVer, message) {
+    console.log('decrypting', message, groupDataByVer);
     let parts = message.split(':');
     let ver       = forge.util.decode64(parts[0]);
     let iv        = forge.util.decode64(parts[1]);
     let encrypted = forge.util.decode64(parts[2]);
     let tag       = forge.util.decode64(parts[3]);
 
-    for (const groupData of groupDataList) {
-        if (ver === groupData.ver) { // pray and hope there's no collisions
-            let decrypted = _decrypt(groupData.key, iv, encrypted, tag);
-            return forge.util.decodeUtf8(decrypted);
-        }
+    let gdList = groupDataByVer.get(ver) ?? [];
+    for (const gd of gdList) {
+        let decrypted = _decrypt(gd.key, iv, encrypted, tag);
+        return forge.util.decodeUtf8(decrypted);
     }
 
     throw Error('Could not decrypt');

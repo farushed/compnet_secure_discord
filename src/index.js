@@ -4,9 +4,9 @@ import { setupCSS } from './styling';
 
 let token = null;
 let keyPair = null;
-let groupDataList = [];
-let currentGroupData = null;
 let latestCertByIssuer = null;
+let groupDataByVer = null;
+let currentGroupData = null;
 
 
 function processMessage(messageNode) {
@@ -29,19 +29,21 @@ function processMessage(messageNode) {
         let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
         console.log(gd);
         if (gd) {
-            groupDataList.unshift(gd);
+            crypto.addGroupData(gd, groupDataByVer);
+            crypto.storeGroupData(groupDataByVer);
             // for now just assume that the latest group data is the one we should keep active
             if (!currentGroupData || gd.ts > currentGroupData.ts) {
+                crypto.storeCurrentGroupData(gd);
                 currentGroupData = gd;
             }
-            result = 'Added to group'
+            result = `Added to group (${gd.mem.join(', ')})`
         }
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
         messageNode.classList.add('control');
     }
-    else if (formatCorrect && groupDataList) {
+    else if (formatCorrect && groupDataByVer) {
         try {
-            let decrypted = crypto.decrypt(groupDataList, text);
+            let decrypted = crypto.decrypt(groupDataByVer, text);
             messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
             messageNode.classList.add('encrypted');
         } catch { // if there's an error decrypting, just treat as plaintext
@@ -136,17 +138,33 @@ function setupTextbox() {
                 sendMessage(c);
             }
             else if (inputValue === '!newgroup') {
-                currentGroupData = crypto.generateGroupData();
-                groupDataList.unshift(currentGroupData);
-                console.log('created new group', currentGroupData);
+                let gd = crypto.generateGroupData([getUsername()]);
+                console.log('created new group', gd);
+
+                crypto.addGroupData(gd, groupDataByVer);
+                crypto.storeGroupData(groupDataByVer);
+                crypto.storeCurrentGroupData(gd);
+                currentGroupData = gd;
             }
             else if (inputValue.startsWith('!add')) {
                 let users = inputValue.substring('!add'.length).trim().split(/\s+/);
-                for (const u of users) {
-                    let userCert = latestCertByIssuer.get(u);
-                    if (userCert) {
-                        let m = crypto.encryptGroupDataForCertificateIssuer(userCert, currentGroupData)
-                        sendMessage('_' + m); // _ to separate from other message types
+
+                let gd = crypto.generateGroupData([...currentGroupData.mem, ...users]);
+                console.log('created new group for add', gd);
+
+                crypto.addGroupData(gd, groupDataByVer);
+                crypto.storeGroupData(groupDataByVer);
+                crypto.storeCurrentGroupData(gd);
+                currentGroupData = gd;
+
+                let us = getUsername();
+                for (const user of gd.mem) {
+                    if (user !== us) {
+                        let userCert = latestCertByIssuer.get(user);
+                        if (userCert) {
+                            let m = crypto.encryptGroupDataForCertificateIssuer(userCert, currentGroupData)
+                            sendMessage('_' + m); // _ to separate from other message types
+                        }
                     }
                 }
             }
@@ -232,6 +250,8 @@ function handleChatContainerAppearance(mutationsList, observer) {
     }
 
     latestCertByIssuer = crypto.loadCertificates();
+    groupDataByVer = crypto.loadGroupData();
+    currentGroupData = crypto.loadCurrentGroupData();
 
     let observer = new MutationObserver(handleChatContainerAppearance);
     observer.observe(document.body, { childList: true, subtree: true });
