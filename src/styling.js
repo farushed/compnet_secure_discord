@@ -1,5 +1,5 @@
 const styles = `
-.messageContent__21e69 {
+[class*=messageContent] {
     /*position: relative;
     display: inline-block;*/
 }
@@ -12,23 +12,23 @@ const styles = `
     padding-left: 1em;
 }
 
-.markup_a7e664.messageContent__21e69 div {
+[class*=markup][class*=messageContent] div {
     border-radius: 5px;
     background-clip: content-box;
     overflow: hidden;
 }
 
 /*
-.markup_a7e664.messageContent__21e69.plaintext div {
+[class*=markup][class*=messageContent].plaintext div {
     background-color: rgba(255, 100, 100, 0.05);
 }
 */
 
-.markup_a7e664.messageContent__21e69.encrypted div {
+[class*=markup][class*=messageContent].encrypted div {
     background-color: rgba(9, 255, 9, 0.1);
 }
 
-.markup_a7e664.messageContent__21e69.control p {
+[class*=markup][class*=messageContent].control p {
     background-color: rgba(94, 64, 191, 0.05)
 }
 

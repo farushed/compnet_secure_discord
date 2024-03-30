@@ -63,8 +63,8 @@ function handleNewMessage(mutationsList, observer) {
     mutationsList.forEach(mutation => {
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) { // Check if the mutation involves adding a new node
             mutation.addedNodes.forEach(node => {
-                if (node.classList && node.classList.contains('messageListItem__6a4fb')) { // Check if new node is a message
-                    let messageNode = node.querySelector('.messageContent__21e69');
+                if (node.classList && node.className.indexOf('messageListItem') >= 0) { // Check if new node is a message
+                    let messageNode = node.querySelector('[class*=messageContent]');
                     // console.log('New message:', messageNode);
 
                     processMessage(messageNode);
@@ -75,7 +75,7 @@ function handleNewMessage(mutationsList, observer) {
 }
 
 function getUsername() {
-    return document.querySelector(".nameTag__0e320").querySelector(".hovered__243e5").textContent;
+    return document.querySelector("[class*=nameTag] [class*=hovered]").textContent;
 }
 
 function sendMessage(message) {
@@ -104,7 +104,11 @@ function sendMessage(message) {
 
 function setupTextbox() {
     let textbox = document.createElement('input');
-    textbox.classList.add('encryptInput', 'markup_a7e664', 'editor__66464', 'fontSize16Padding__48818', 'themedBackground__6b1b6', 'scrollableContainer__33e06')
+    textbox.classList.add('encryptInput',
+        ...document.querySelector('form [class*=scrollable]').classList, // background etc of the default textbox div
+        ...document.querySelector('form [role*=textbox]').classList.values()
+            .filter(c => !c.match(/slateTextArea/)), // font and text area properties (but not the positioning class)
+    )
     textbox.setAttribute('type', 'text');
     textbox.setAttribute('placeholder', 'Enter message to encrypt...');
     // Insert the textbox just before the form div
@@ -168,7 +172,7 @@ function handleChatContainerAppearance(mutationsList, observer) {
     for (var mutation of mutationsList) {
         if (mutation.type === 'childList') {
             // the chat container gets removed and readded when switching channels, so just check for it changing
-            let chatContainer = document.querySelector('.messagesWrapper_ea2b0b');
+            let chatContainer = document.querySelector('[class*=messagesWrapper]');
             if (chatContainer != curChatContainer) {
                 console.log('new container', chatContainer)
                 curChatContainer = chatContainer;
@@ -183,7 +187,7 @@ function handleChatContainerAppearance(mutationsList, observer) {
 
                 // process each message that already exists, in case the container starts with messages
                 // eg on switch to a channel that was already loaded previously
-                let messageNodes = chatContainer.querySelectorAll('.messageContent__21e69');
+                let messageNodes = chatContainer.querySelectorAll('[class*=messageContent]');
                 console.log(messageNodes);
                 for (const messageNode of messageNodes) {
                     processMessage(messageNode);
