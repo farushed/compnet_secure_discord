@@ -104,6 +104,27 @@ function sendMessage(message) {
     // .catch(error => console.error('API Error:', error));
 }
 
+function createGroupAndShare(groupMembers) {
+    let gd = crypto.generateGroupData(groupMembers);
+    console.log('created new group', gd);
+
+    crypto.addGroupData(gd, groupDataByVer);
+    crypto.storeGroupData(groupDataByVer);
+    crypto.storeCurrentGroupData(gd);
+    currentGroupData = gd;
+
+    let us = getUsername();
+    for (const user of gd.mem) {
+        if (user !== us) {
+            let userCert = latestCertByIssuer.get(user);
+            if (userCert) {
+                let m = crypto.encryptGroupDataForCertificateIssuer(userCert, currentGroupData)
+                sendMessage('_' + m); // _ to separate from other message types
+            }
+        }
+    }
+}
+
 function setupTextbox() {
     let textbox = document.createElement('input');
     textbox.classList.add('encryptInput',
@@ -138,35 +159,15 @@ function setupTextbox() {
                 sendMessage(c);
             }
             else if (inputValue === '!newgroup') {
-                let gd = crypto.generateGroupData([getUsername()]);
-                console.log('created new group', gd);
-
-                crypto.addGroupData(gd, groupDataByVer);
-                crypto.storeGroupData(groupDataByVer);
-                crypto.storeCurrentGroupData(gd);
-                currentGroupData = gd;
+                createGroupAndShare([getUsername()]);
             }
             else if (inputValue.startsWith('!add')) {
-                let users = inputValue.substring('!add'.length).trim().split(/\s+/);
-
-                let gd = crypto.generateGroupData([...currentGroupData.mem, ...users]);
-                console.log('created new group for add', gd);
-
-                crypto.addGroupData(gd, groupDataByVer);
-                crypto.storeGroupData(groupDataByVer);
-                crypto.storeCurrentGroupData(gd);
-                currentGroupData = gd;
-
-                let us = getUsername();
-                for (const user of gd.mem) {
-                    if (user !== us) {
-                        let userCert = latestCertByIssuer.get(user);
-                        if (userCert) {
-                            let m = crypto.encryptGroupDataForCertificateIssuer(userCert, currentGroupData)
-                            sendMessage('_' + m); // _ to separate from other message types
-                        }
-                    }
-                }
+                let usersToAdd = inputValue.substring('!add'.length).trim().split(/\s+/);
+                createGroupAndShare([...currentGroupData.mem, ...usersToAdd]);
+            }
+            else if (inputValue.startsWith('!rm')) {
+                let usersToRemove = inputValue.substring('!rm'.length).trim().split(/\s+/);
+                createGroupAndShare(currentGroupData.mem.filter(user => !usersToRemove.includes(user)));
             }
             else {
                 if (!currentGroupData) {
