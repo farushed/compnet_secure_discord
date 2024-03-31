@@ -28,6 +28,10 @@ const styles = `
     background-color: rgba(9, 255, 9, 0.1);
 }
 
+[class*=markup][class*=messageContent].encrypted.old div {
+    background-color: rgba(255, 255, 9, 0.1);
+}
+
 [class*=markup][class*=messageContent].control p {
     background-color: rgba(94, 64, 191, 0.05)
 }

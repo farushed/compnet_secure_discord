@@ -8,6 +8,7 @@ let keyPair;
 let latestCertByIssuer;
 let groupDataByVer;
 let currentGroupData;
+let oldGroupVersions;
 
 
 // Process user input and execute commands if applicable
@@ -22,16 +23,17 @@ async function processUserInput(input) {
         console.log('generated cert', c);
         sendMessage(c);
     }
-    else if (input === '!newgroup') {
-        createGroupAndShare([getUsername()]);
+    else if (input.startsWith('!newgroup')) {
+        let groupName = input.substring('!newgroup'.length).trim().replaceAll(' ', '-');
+        createGroup(groupName);
     }
     else if (input.startsWith('!add')) {
         let usersToAdd = input.substring('!add'.length).trim().split(/\s+/);
-        createGroupAndShare([...currentGroupData.mem, ...usersToAdd]);
+        modifyGroupAndShare(m => [...m, ...usersToAdd]);
     }
     else if (input.startsWith('!rm')) {
         let usersToRemove = input.substring('!rm'.length).trim().split(/\s+/);
-        createGroupAndShare(currentGroupData.mem.filter(user => !usersToRemove.includes(user)));
+        modifyGroupAndShare(m => m.filter(user => !usersToRemove.includes(user)));
     }
     else {
         if (!currentGroupData) {
@@ -78,23 +80,40 @@ function processMessage(messageNode) {
         let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
         console.log(gd);
         if (gd) {
-            crypto.addGroupData(gd, groupDataByVer);
-            crypto.storeGroupData(groupDataByVer);
-            // for now just assume that the latest group data is the one we should keep active
-            if (!currentGroupData || gd.ts > currentGroupData.ts) {
-                crypto.storeCurrentGroupData(gd);
-                currentGroupData = gd;
+            if (!groupDataByVer.has(gd.ver)) { // this key is new to us, process it
+                if (gd.prev && oldGroupVersions.has(gd.prev)) { // the previous group key is outdated! don't trust!
+                    result = `Tried to add to group ${gd.name} (${gd.mem.join(', ')}) but previous referenced key outdated!`;
+                } else {
+                    groupDataByVer.set(gd.ver, gd);
+                    crypto.storeGroupData(groupDataByVer);
+                    // for now just assume that the latest group data is the one we should keep active
+                    if (!currentGroupData || gd.ts > currentGroupData.ts) {
+                        crypto.storeCurrentGroupData(gd);
+                        currentGroupData = gd;
+                    }
+                    oldGroupVersions.add(gd.prev);
+                    crypto.storeOldGroupVersions(oldGroupVersions);
+
+                    result = `Added to group ${gd.name} (${gd.mem.join(', ')})`
+                }
             }
-            result = `Added to group (${gd.mem.join(', ')})`
         }
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
         messageNode.classList.add('control');
     }
     else {
         try {
-            let decrypted = crypto.decrypt(groupDataByVer, text);
-            messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
+            let [decrypted, gdUsed] = crypto.decrypt(groupDataByVer, text);
+            let warn = oldGroupVersions.has(gdUsed.ver);
+            let groupInfo = `<span style="font-size:2.5em">${warn?"OLD KEY&emsp;":""}${gdUsed.name}</span>`;
+            messageNode.innerHTML = `<div>`
+                                    +`<p class="encrypted">${groupInfo}&emsp;${text}</p>`
+                                    +`<p class="decrypted">${decrypted}</p>`
+                                    +`</div>`;
             messageNode.classList.add('encrypted');
+            if (warn) {
+                messageNode.classList.add('old');
+            }
         } catch { // if there's an error decrypting, just treat as plaintext
             messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
             messageNode.classList.add('plaintext');
@@ -112,7 +131,7 @@ function sendMessage(message) {
     let channelId = segments[segments.length-1];
 
     // start with ~ (just as a flag), then surround in code block
-    message = '~`' + message.replace('`', '\\`') + '`'
+    message = '~`' + message.replaceAll('`', '\\`') + '`'
 
     // Send the API request
     fetch(`https://discord.com/api/v9/channels/${channelId}/messages`, {
@@ -131,11 +150,13 @@ function sendMessage(message) {
     // .catch(error => console.error('API Error:', error));
 }
 
-function createGroupAndShare(groupMembers) {
-    let gd = crypto.generateGroupData(groupMembers);
+function modifyGroupAndShare(modifyFunc) {
+    let gd = crypto.generateGroupData(currentGroupData.name, modifyFunc(currentGroupData.mem), currentGroupData);
     console.log('created new group', gd);
 
-    crypto.addGroupData(gd, groupDataByVer);
+    oldGroupVersions.add(currentGroupData.ver);
+    crypto.storeOldGroupVersions(oldGroupVersions);
+    groupDataByVer.set(gd.ver, gd);
     crypto.storeGroupData(groupDataByVer);
     crypto.storeCurrentGroupData(gd);
     currentGroupData = gd;
@@ -150,6 +171,16 @@ function createGroupAndShare(groupMembers) {
             }
         }
     }
+}
+
+function createGroup(groupName) {
+    let gd = crypto.generateGroupData(getUsername() + '/' + groupName, [getUsername()]);
+    console.log('created new group', gd);
+
+    groupDataByVer.set(gd.ver, gd);
+    crypto.storeGroupData(groupDataByVer);
+    crypto.storeCurrentGroupData(gd);
+    currentGroupData = gd;
 }
 
 
@@ -198,13 +229,13 @@ function setUpProfileButtons(userPopoutInner) {
     if (currentGroupData.mem.includes(name)) {
         button.innerText = 'Remove from group';
         button.onclick = () => {
-            createGroupAndShare(currentGroupData.mem.filter(user => user !== name));
+            modifyGroupAndShare(m => m.filter(user => user !== name));
             userPopoutInner.remove(); // 'close' the popout
         }
     } else {
         button.innerText = 'Add to group';
         button.onclick = () => {
-            createGroupAndShare([...currentGroupData.mem, name]);
+            modifyGroupAndShare(m => [...m, name]);
             userPopoutInner.remove(); // 'close' the popout
         }
     }
@@ -310,6 +341,7 @@ function handleMutations(mutationsList, observer) {
     latestCertByIssuer = crypto.loadCertificates();
     groupDataByVer = crypto.loadGroupData();
     currentGroupData = crypto.loadCurrentGroupData();
+    oldGroupVersions = crypto.loadOldGroupVersions();
 
     let observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true });
