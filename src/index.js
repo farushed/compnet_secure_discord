@@ -183,6 +183,40 @@ function setupTextbox() {
 }
 
 
+// Add buttons to user profile to allow adding or removing them from the current group
+function setUpProfileButtons(userPopoutInner) {
+    let name = userPopoutInner.querySelector('span[class*=userTagUsernameBase]').textContent;
+    if (name === getUsername()) {
+        return; // don't want to do anything for ourselves
+    }
+
+    let container = document.createElement('div');
+    container.classList.add('profileButtonContainer');
+
+    let button = document.createElement('div');
+    button.classList.add('profileButton');
+    if (currentGroupData.mem.includes(name)) {
+        button.innerText = 'Remove from group';
+        button.onclick = () => {
+            createGroupAndShare(currentGroupData.mem.filter(user => user !== name));
+            userPopoutInner.remove(); // 'close' the popout
+        }
+    } else {
+        button.innerText = 'Add to group';
+        button.onclick = () => {
+            createGroupAndShare([...currentGroupData.mem, name]);
+            userPopoutInner.remove(); // 'close' the popout
+        }
+    }
+    container.append(button);
+
+    // insert another divider and our button container before the first divider in the popout
+    let divider = userPopoutInner.querySelector('[class*=divider]');
+    divider.parentNode.insertBefore(divider.cloneNode(), divider);
+    divider.parentNode.insertBefore(container, divider);
+}
+
+
 let curChatContainer = null;
 
 // Handle channel appearance/change and message apppearance
@@ -215,6 +249,27 @@ function handleMutations(mutationsList, observer) {
                         processMessage(messageNode);
                     }
                 });
+            }
+
+            // Handle the user profile popout appearing. If it has to load, the div we're interested in appears later
+            if (mutation.target.getAttribute('class')?.startsWith('layerContainer')) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.id?.indexOf('popout') >= 0) {
+                        let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
+                        if (userPopoutInner) {
+                            setUpProfileButtons(userPopoutInner)
+                        }
+                    }
+                })
+            } else if (mutation.target.getAttribute('id')?.startsWith('popout')) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.tagName.toLowerCase() === 'div') {
+                        let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
+                        if (userPopoutInner) {
+                            setUpProfileButtons(userPopoutInner)
+                        }
+                    }
+                })
             }
         }
     }

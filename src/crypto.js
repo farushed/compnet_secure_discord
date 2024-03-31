@@ -130,7 +130,7 @@ export function generateGroupData(groupMembers) {
     return {
         key,
         ver,
-        mem: groupMembers,
+        mem: [...new Set(groupMembers)], // only keep unique members
         ts: new Date().getTime(),
     }
 }

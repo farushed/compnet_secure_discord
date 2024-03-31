@@ -44,6 +44,26 @@ p.encrypted {
 p.decrypted {
     margin: 0;
 }
+
+
+.profileButtonContainer {
+    padding: 6px 8px;
+}
+
+.profileButton {
+    color: var(--interactive-normal);
+    cursor: pointer;
+
+    border-radius: 2px;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    margin-top: 8px;
+}
+
+.profileButton:hover {
+    color: var(--interactive-hover);
+    background: var(--profile-body-background-hover);
+}
 `
 
 // Add css in a style element to the document head
