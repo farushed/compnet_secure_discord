@@ -2,13 +2,51 @@ import * as crypto from './crypto'
 import { setupCSS } from './styling';
 
 
-let token = null;
-let keyPair = null;
-let latestCertByIssuer = null;
-let groupDataByVer = null;
-let currentGroupData = null;
+// Global variables, to be initialised in main setup function
+let token;
+let keyPair;
+let latestCertByIssuer;
+let groupDataByVer;
+let currentGroupData;
 
 
+// Process user input and execute commands if applicable
+async function processUserInput(input) {
+    if (input === '!keypair') {
+        keyPair = await crypto.generateKeyPair();
+        console.log("generated key pair", keyPair);
+        crypto.storeKeyPair(keyPair);
+    }
+    else if (input === '!cert') {
+        let c = crypto.generateCertificate(keyPair, getUsername());
+        console.log('generated cert', c);
+        sendMessage(c);
+    }
+    else if (input === '!newgroup') {
+        createGroupAndShare([getUsername()]);
+    }
+    else if (input.startsWith('!add')) {
+        let usersToAdd = input.substring('!add'.length).trim().split(/\s+/);
+        createGroupAndShare([...currentGroupData.mem, ...usersToAdd]);
+    }
+    else if (input.startsWith('!rm')) {
+        let usersToRemove = input.substring('!rm'.length).trim().split(/\s+/);
+        createGroupAndShare(currentGroupData.mem.filter(user => !usersToRemove.includes(user)));
+    }
+    else {
+        if (!currentGroupData) {
+            alert('No group/symmetric key in place yet');
+            return;
+        }
+        input = crypto.encrypt(currentGroupData, input);
+        console.log('sending', input);
+        sendMessage(input);
+    }
+}
+
+
+// Process a newly added message node, decrypting encrypted messages where possible
+// Take action when certificates or group data are received
 function processMessage(messageNode) {
     // check for the specific format of our messages
     let formatCorrect = messageNode.children.length === 2
@@ -16,15 +54,26 @@ function processMessage(messageNode) {
                     && messageNode.children[0].innerText.trim() === '~'
                     && messageNode.children[1].tagName.toLowerCase() === 'code';
 
-    let text = formatCorrect ? messageNode.children[1].innerText : undefined;
-    if (formatCorrect && text.startsWith('-----BEGIN')) {
-        if (crypto.addCertificate(text, latestCertByIssuer)) {
+    if (!formatCorrect) {
+        // wrap for styling purposes
+        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
+        messageNode.classList.add('plaintext');
+        return;
+    }
+
+    let text = messageNode.children[1].innerText;
+
+    if (text.startsWith('-----BEGIN')) {
+        // Process certificate message
+        let success = crypto.addCertificate(text, latestCertByIssuer);
+        if (success) {
             crypto.storeCertificates(latestCertByIssuer); // only store if something changed
         }
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
         messageNode.classList.add('control');
     }
-    else if (formatCorrect && text.startsWith('_')) {
+    else if (text.startsWith('_')) {
+        // Process group data exchange message
         let result = '';
         let gd = crypto.decryptGroupDataWithPrivateKey(keyPair.privateKey, text.substring(1));
         console.log(gd);
@@ -41,7 +90,7 @@ function processMessage(messageNode) {
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
         messageNode.classList.add('control');
     }
-    else if (formatCorrect && groupDataByVer) {
+    else {
         try {
             let decrypted = crypto.decrypt(groupDataByVer, text);
             messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${decrypted}</p></div>`;
@@ -51,35 +100,13 @@ function processMessage(messageNode) {
             messageNode.classList.add('plaintext');
         }
     }
-    else {
-        // wrap for styling purposes
-        messageNode.innerHTML = `<div>${messageNode.innerHTML}</div>`;
-        messageNode.classList.add('plaintext');
-    }
-}
-
-// Listen to new messages being added, and process them
-function handleNewMessage(mutationsList, observer) {
-    // console.log(mutationsList, observer)
-
-    mutationsList.forEach(mutation => {
-        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) { // Check if the mutation involves adding a new node
-            mutation.addedNodes.forEach(node => {
-                if (node.classList && node.className.indexOf('messageListItem') >= 0) { // Check if new node is a message
-                    let messageNode = node.querySelector('[class*=messageContent]');
-                    // console.log('New message:', messageNode);
-
-                    processMessage(messageNode);
-                }
-            });
-        }
-    });
 }
 
 function getUsername() {
     return document.querySelector("[class*=nameTag] [class*=hovered]").textContent;
 }
 
+// Send a message in our custom format (~`message`) using the Discord API
 function sendMessage(message) {
     let segments = window.location.pathname.split("?")[0].split("/");
     let channelId = segments[segments.length-1];
@@ -125,6 +152,8 @@ function createGroupAndShare(groupMembers) {
     }
 }
 
+
+// Add an input textbox to the DOM for interacting with this script
 function setupTextbox() {
     let textbox = document.createElement('input');
     textbox.classList.add('encryptInput',
@@ -132,8 +161,10 @@ function setupTextbox() {
         ...document.querySelector('form [role*=textbox]').classList.values()
             .filter(c => !c.match(/slateTextArea/)), // font and text area properties (but not the positioning class)
     )
+
     textbox.setAttribute('type', 'text');
     textbox.setAttribute('placeholder', 'Enter message to encrypt...');
+
     // Insert the textbox just before the form div
     let formDiv = document.querySelector('form > div');
     formDiv.prepend(textbox);
@@ -143,76 +174,47 @@ function setupTextbox() {
         if (event.key === "Enter") {
             event.preventDefault();
 
-            // Get the value of the textbox
             let inputValue = textbox.value;
-            // Clear the textbox
             textbox.value = '';
 
-            if (inputValue === '!keypair') {
-                keyPair = await crypto.generateKeyPair();
-                console.log("generated key pair", keyPair);
-                crypto.storeKeyPair(keyPair);
-            }
-            else if (inputValue === '!cert') {
-                let c = crypto.generateCertificate(keyPair, getUsername());
-                console.log('generated cert', c);
-                sendMessage(c);
-            }
-            else if (inputValue === '!newgroup') {
-                createGroupAndShare([getUsername()]);
-            }
-            else if (inputValue.startsWith('!add')) {
-                let usersToAdd = inputValue.substring('!add'.length).trim().split(/\s+/);
-                createGroupAndShare([...currentGroupData.mem, ...usersToAdd]);
-            }
-            else if (inputValue.startsWith('!rm')) {
-                let usersToRemove = inputValue.substring('!rm'.length).trim().split(/\s+/);
-                createGroupAndShare(currentGroupData.mem.filter(user => !usersToRemove.includes(user)));
-            }
-            else {
-                if (!currentGroupData) {
-                    alert('No group/symmetric key in place yet');
-                    return;
-                }
-                inputValue = crypto.encrypt(currentGroupData, inputValue);
-                console.log('sending', inputValue);
-                sendMessage(inputValue);
-            }
+            processUserInput(inputValue);
         }
     });
 }
 
 
 let curChatContainer = null;
-let curMessageObserver = null;
 
-// setup message observer only after the relevant element gets loaded in
-function handleChatContainerAppearance(mutationsList, observer) {
+// Handle channel appearance/change and message apppearance
+function handleMutations(mutationsList, observer) {
     for (var mutation of mutationsList) {
         if (mutation.type === 'childList') {
-            // the chat container gets removed and readded when switching channels, so just check for it changing
+            // Check for chat container changing (gets removed and readded when switching channels)
             let chatContainer = document.querySelector('[class*=messagesWrapper]');
             if (chatContainer != curChatContainer) {
-                console.log('new container', chatContainer)
                 curChatContainer = chatContainer;
 
-                // If we were observing the prervious chat container, stop
-                if (curMessageObserver) {
-                    curMessageObserver.disconnect();
-                }
-                // Observe the chat container for mutations
-                curMessageObserver = new MutationObserver(handleNewMessage);
-                curMessageObserver.observe(chatContainer, { childList: true, subtree: true });
+                // Textbox location is within the chat container, so create/recreate it
+                setupTextbox();
 
                 // process each message that already exists, in case the container starts with messages
                 // eg on switch to a channel that was already loaded previously
                 let messageNodes = chatContainer.querySelectorAll('[class*=messageContent]');
-                console.log(messageNodes);
+
                 for (const messageNode of messageNodes) {
                     processMessage(messageNode);
                 }
+            }
 
-                setupTextbox();
+            // Handle newly added messages
+            if (mutation.target.tagName.toLowerCase() === 'ol') { // Check if it's being added to the list of messages
+                mutation.addedNodes.forEach(node => {
+                    if (node.getAttribute('class')?.indexOf('messageListItem') >= 0) { // Check if new node is a message
+                        let messageNode = node.querySelector('[class*=messageContent]');
+
+                        processMessage(messageNode);
+                    }
+                });
             }
         }
     }
@@ -254,7 +256,7 @@ function handleChatContainerAppearance(mutationsList, observer) {
     groupDataByVer = crypto.loadGroupData();
     currentGroupData = crypto.loadCurrentGroupData();
 
-    let observer = new MutationObserver(handleChatContainerAppearance);
+    let observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true });
 
 
