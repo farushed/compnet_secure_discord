@@ -28,21 +28,19 @@ async function processUserInput(input) {
         createGroup(groupName);
     }
     else if (input.startsWith('!add')) {
-        let usersToAdd = input.substring('!add'.length).trim().split(/\s+/);
-        modifyGroupAndShare(m => [...m, ...usersToAdd]);
+        tryAddUsers(...input.substring('!add'.length).trim().split(/\s+/));
     }
     else if (input.startsWith('!rm')) {
-        let usersToRemove = input.substring('!rm'.length).trim().split(/\s+/);
-        modifyGroupAndShare(m => m.filter(user => !usersToRemove.includes(user)));
+        tryRemoveUsers(input.substring('!rm'.length).trim().split(/\s+/));
     }
     else {
-        if (!currentGroupData) {
+        if (currentGroupData) {
+            input = crypto.encrypt(currentGroupData, input);
+            console.log('sending', input);
+            sendMessage(input);
+        } else {
             alert('No group/symmetric key in place yet');
-            return;
         }
-        input = crypto.encrypt(currentGroupData, input);
-        console.log('sending', input);
-        sendMessage(input);
     }
 }
 
@@ -82,7 +80,7 @@ function processMessage(messageNode) {
         if (gd) {
             if (!groupDataByVer.has(gd.ver)) { // this key is new to us, process it
                 if (gd.prev && oldGroupVersions.has(gd.prev)) { // the previous group key is outdated! don't trust!
-                    result = `Tried to add to group ${gd.name} (${gd.mem.join(', ')}) but previous referenced key outdated!`;
+                    result = `Tried to add to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')}) but previous referenced key outdated!`;
                 } else {
                     groupDataByVer.set(gd.ver, gd);
                     crypto.storeGroupData(groupDataByVer);
@@ -94,7 +92,7 @@ function processMessage(messageNode) {
                     oldGroupVersions.add(gd.prev);
                     crypto.storeOldGroupVersions(oldGroupVersions);
 
-                    result = `Added to group ${gd.name} (${gd.mem.join(', ')})`
+                    result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`
                 }
             }
         }
@@ -105,7 +103,7 @@ function processMessage(messageNode) {
         try {
             let [decrypted, gdUsed] = crypto.decrypt(groupDataByVer, text);
             let warn = oldGroupVersions.has(gdUsed.ver);
-            let groupInfo = `<span style="font-size:2.5em">${warn?"OLD KEY&emsp;":""}${gdUsed.name}</span>`;
+            let groupInfo = `<span style="font-size:2.5em">${warn?"OLD KEY&emsp;":""}${gdUsed.owner}/${gdUsed.name}</span>`;
             messageNode.innerHTML = `<div>`
                                     +`<p class="encrypted">${groupInfo}&emsp;${text}</p>`
                                     +`<p class="decrypted">${decrypted}</p>`
@@ -150,8 +148,24 @@ function sendMessage(message) {
     // .catch(error => console.error('API Error:', error));
 }
 
+function tryAddUsers(...usersToAdd) {
+    if (currentGroupData.owner !== getUsername()) {
+        alert(`You don't own the current group "${currentGroupData.owner}/${currentGroupData.name}"`);
+        return;
+    }
+    modifyGroupAndShare(m => [...m, ...usersToAdd]);
+}
+
+function tryRemoveUsers(...usersToRemove) {
+    if (currentGroupData.owner !== getUsername()) {
+        alert(`You don't own the current group "${currentGroupData.owner}/${currentGroupData.name}"`);
+        return;
+    }
+    modifyGroupAndShare(m => m.filter(user => !usersToRemove.includes(user)));
+}
+
 function modifyGroupAndShare(modifyFunc) {
-    let gd = crypto.generateGroupData(currentGroupData.name, modifyFunc(currentGroupData.mem), currentGroupData);
+    let gd = crypto.generateGroupData(currentGroupData.owner, currentGroupData.name, modifyFunc(currentGroupData.mem), currentGroupData);
     console.log('created new group', gd);
 
     oldGroupVersions.add(currentGroupData.ver);
@@ -174,7 +188,7 @@ function modifyGroupAndShare(modifyFunc) {
 }
 
 function createGroup(groupName) {
-    let gd = crypto.generateGroupData(getUsername() + '/' + groupName, [getUsername()]);
+    let gd = crypto.generateGroupData(getUsername(), groupName, [getUsername()]);
     console.log('created new group', gd);
 
     groupDataByVer.set(gd.ver, gd);
@@ -227,15 +241,15 @@ function setUpProfileButtons(userPopoutInner) {
     let button = document.createElement('div');
     button.classList.add('profileButton');
     if (currentGroupData.mem.includes(name)) {
-        button.innerText = 'Remove from group';
+        button.innerText = `Remove from "${currentGroupData.owner}/${currentGroupData.name}"`;
         button.onclick = () => {
-            modifyGroupAndShare(m => m.filter(user => user !== name));
+            tryRemoveUsers(name);
             userPopoutInner.remove(); // 'close' the popout
         }
     } else {
-        button.innerText = 'Add to group';
+        button.innerText = `Add to "${currentGroupData.owner}/${currentGroupData.name}"`;
         button.onclick = () => {
-            modifyGroupAndShare(m => [...m, name]);
+            tryAddUsers(name);
             userPopoutInner.remove(); // 'close' the popout
         }
     }

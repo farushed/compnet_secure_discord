@@ -101,6 +101,7 @@ export function loadCertificates() {
 }
 
 // takes the serializable object to be encrypted and a cert of the user we're sending it to
+// TODO sign with our own privateKey so others can make sure we are the owner
 export function encryptGroupDataForCertificateIssuer(cert, groupData) {
     let encrypted = cert.publicKey.encrypt(JSON.stringify(groupData))
 
@@ -120,7 +121,7 @@ export function decryptGroupDataWithPrivateKey(privateKey, message) {
 }
 
 // Creates a new groupData object with a new symmetric key
-export function generateGroupData(name, groupMembers, prev=null) {
+export function generateGroupData(owner, name, groupMembers, prev=null) {
     let key = generateSymmetricKey();
     // generate a version number from the hash
     let md = forge.md.sha256.create();
@@ -130,6 +131,7 @@ export function generateGroupData(name, groupMembers, prev=null) {
     return {
         key,
         ver,
+        owner,
         name,
         mem: [...new Set(groupMembers)], // only keep unique members
         ts: new Date().getTime(),
