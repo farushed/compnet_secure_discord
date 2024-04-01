@@ -7,10 +7,11 @@ import { setupCSS } from './styling';
 let token;
 let keyPair;
 let latestCertByIssuer;
-let groupDataByVer;
-let currentGroupData;
-let oldGroupVersions;
 
+let groupDataList = [];
+let groupDataByVer = new Map();
+let groupDataByOwnerAndName = new Map();
+let currentGroupData;
 
 // Process user input and execute commands if applicable
 async function processUserInput(input) {
@@ -64,6 +65,11 @@ function processMessage(messageNode) {
 
     let text = messageNode.children[1].innerText;
 
+    // extract message timestamp from discord message snowflake id
+    // https://discord.com/developers/docs/reference#snowflakes
+    let messageId = messageNode.id.match(/-(\d+)/)[1];
+    let messageTimestamp = Number((BigInt(messageId) >> 22n) + 1420070400000n);
+
     if (text.startsWith('-----BEGIN')) {
         // Process certificate message
         let success = storage.addCertificate(text, latestCertByIssuer);
@@ -80,22 +86,17 @@ function processMessage(messageNode) {
         console.log(gd);
         if (gd) {
             if (!groupDataByVer.has(gd.ver)) { // this key is new to us, process it
-                if (gd.prev && oldGroupVersions.has(gd.prev)) { // the previous group key is outdated! don't trust!
-                    result = `Tried to add to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')}) but previous referenced key outdated!`;
-                } else {
-                    groupDataByVer.set(gd.ver, gd);
-                    storage.storeGroupData(groupDataByVer);
-                    // for now just assume that the latest group data is the one we should keep active
-                    if (!currentGroupData || gd.ts > currentGroupData.ts) {
-                        storage.storeCurrentGroupData(gd);
-                        currentGroupData = gd;
-                    }
-                    oldGroupVersions.add(gd.prev);
-                    storage.storeOldGroupVersions(oldGroupVersions);
-
-                    result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`
+                // TODO verify owner of group (as specified in gd) matches message owner (digital signature)
+                addGroupData(gd);
+                storage.storeGroupData(groupDataList);
+                // for now just assume that the latest group data is the one we should keep active
+                if (!currentGroupData || gd.ts > currentGroupData.ts) {
+                    currentGroupData = gd;
+                    storage.storeCurrentGroupData(gd);
                 }
             }
+            // Show the message even if we already have previously processed it
+            result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`;
         }
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
         messageNode.classList.add('control');
@@ -103,10 +104,13 @@ function processMessage(messageNode) {
     else {
         try {
             let [decrypted, gdUsed] = crypto.decrypt(groupDataByVer, text);
-            let warn = oldGroupVersions.has(gdUsed.ver);
-            let groupInfo = `<span style="font-size:2.5em">${warn?"OLD KEY&emsp;":""}${gdUsed.owner}/${gdUsed.name}</span>`;
+            let warn = gdUsed !== groupDataByOwnerAndName.get(gdUsed.owner+'/'+gdUsed.name)[0]
+                        && messageTimestamp > gdUsed.revokedAt;
+            let groupInfo = `<span style="font-size:2.5em">`
+                            +`${warn?"OLD KEY&emsp;":""}${gdUsed.owner}/${gdUsed.name}&emsp;`
+                            +`</span>`;
             messageNode.innerHTML = `<div>`
-                                    +`<p class="encrypted">${groupInfo}&emsp;${text}</p>`
+                                    +`<p class="encrypted">${groupInfo}${text}</p>`
                                     +`<p class="decrypted">${decrypted}</p>`
                                     +`</div>`;
             messageNode.classList.add('encrypted');
@@ -169,12 +173,10 @@ function modifyGroupAndShare(modifyFunc) {
     let gd = crypto.generateGroupData(currentGroupData.owner, currentGroupData.name, modifyFunc(currentGroupData.mem), currentGroupData);
     console.log('created new group', gd);
 
-    oldGroupVersions.add(currentGroupData.ver);
-    storage.storeOldGroupVersions(oldGroupVersions);
-    groupDataByVer.set(gd.ver, gd);
-    storage.storeGroupData(groupDataByVer);
-    storage.storeCurrentGroupData(gd);
+    addGroupData(gd);
+    storage.storeGroupData(groupDataList);
     currentGroupData = gd;
+    storage.storeCurrentGroupData(gd);
 
     let us = getUsername();
     for (const user of gd.mem) {
@@ -192,10 +194,10 @@ function createGroup(groupName) {
     let gd = crypto.generateGroupData(getUsername(), groupName, [getUsername()]);
     console.log('created new group', gd);
 
-    groupDataByVer.set(gd.ver, gd);
-    storage.storeGroupData(groupDataByVer);
-    storage.storeCurrentGroupData(gd);
+    addGroupData(gd);
+    storage.storeGroupData(groupDataList);
     currentGroupData = gd;
+    storage.storeCurrentGroupData(gd);
 }
 
 
@@ -322,6 +324,41 @@ function handleMutations(mutationsList, observer) {
 }
 
 
+function addGroupData(gd) {
+    // the full list of group data that we must maintain
+    groupDataList.push(gd);
+
+    // assume no collisions possible
+    groupDataByVer.set(gd.ver, gd);
+
+    // set up group's keys in reverse sorted order by creation timestamp
+    // done inductively - maintain sorted list by inserting in the right place, assuming sorted list
+    // also set up revokedAt which point to the next latest groupData's creation timestamp
+    let key = gd.owner + '/' + gd.name;
+    let list = groupDataByOwnerAndName.get(key);
+    if (!list) {
+        list = [];
+        groupDataByOwnerAndName.set(key, list);
+    }
+
+    let idx = list.findIndex(otherGd => otherGd.ts <= gd.ts);
+    if (idx === -1) {
+        // current gd must have been the oldest so far
+        if (list.length > 0) {
+            gd.revokedAt = list[list.length-1].ts;
+        }
+        list.push(gd); // found nothing smaller, so insert as tail
+    } else {
+        // current gd replaced the one at idx, and was replaced by the one at idx-1 if it exists
+        list[idx].revokedAt = gd.ts;
+        if (idx-1 >= 0) {
+            gd.revokedAt = list[idx-1].ts;
+        }
+        list.splice(idx, 0, gd); // insert just before the smaller element we found
+    }
+}
+
+
 // main code to run on script init
 (async function() {
 
@@ -337,9 +374,11 @@ function handleMutations(mutationsList, observer) {
     }
 
     latestCertByIssuer = storage.loadCertificates();
-    groupDataByVer = storage.loadGroupData();
+
+    for (const gd of storage.loadGroupData()) {
+        addGroupData(gd);
+    }
     currentGroupData = storage.loadCurrentGroupData();
-    oldGroupVersions = storage.loadOldGroupVersions();
 
 
     let observer = new MutationObserver(handleMutations);

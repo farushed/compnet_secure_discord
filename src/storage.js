@@ -89,25 +89,20 @@ export function loadCertificates() {
 }
 
 
-// Store the groupData map to localStorage as just the array of groupData objects
-export function storeGroupData(groupDataByVer) {
+// Store the list of groupData objects
+export function storeGroupData(groupDataList) {
     localStorage.setItem('my_groups', JSON.stringify(
-        Array.from(groupDataByVer.values())
+        groupDataList
     ));
 }
 
-// Get the list of groupData from localStorage, and represent it as a map. If not found, create an empty one.
-// Returns a map of version to group data
+// Load the list of groupData objects. If not found, create an empty one.
 export function loadGroupData() {
-    let groupDataByVer = new Map();
-
     let stored = localStorage.getItem('my_groups');
     if (stored) {
-        let groupDataObjects = JSON.parse(stored);
-        groupDataObjects.forEach(gd => groupDataByVer.set(gd.ver, gd));
+        return JSON.parse(stored);
     }
-
-    return groupDataByVer;
+    return [];
 }
 
 export function storeCurrentGroupData(currentGroupData) {
@@ -116,13 +111,4 @@ export function storeCurrentGroupData(currentGroupData) {
 
 export function loadCurrentGroupData() {
     return JSON.parse(localStorage.getItem('my_cur_group'));
-}
-
-
-export function storeOldGroupVersions(oldGroupVersions) {
-    localStorage.setItem('my_old_groups', JSON.stringify([...oldGroupVersions]));
-}
-
-export function loadOldGroupVersions() {
-    return new Set(JSON.parse(localStorage.getItem('my_old_groups') ?? "[]"));
 }
