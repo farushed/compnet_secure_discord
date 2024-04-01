@@ -1,4 +1,5 @@
-import * as crypto from './crypto'
+import * as crypto from './crypto';
+import * as storage from './storage';
 import { setupCSS } from './styling';
 
 
@@ -16,7 +17,7 @@ async function processUserInput(input) {
     if (input === '!keypair') {
         keyPair = await crypto.generateKeyPair();
         console.log("generated key pair", keyPair);
-        crypto.storeKeyPair(keyPair);
+        storage.storeKeyPair(keyPair);
     }
     else if (input === '!cert') {
         let c = crypto.generateCertificate(keyPair, getUsername());
@@ -65,9 +66,9 @@ function processMessage(messageNode) {
 
     if (text.startsWith('-----BEGIN')) {
         // Process certificate message
-        let success = crypto.addCertificate(text, latestCertByIssuer);
+        let success = storage.addCertificate(text, latestCertByIssuer);
         if (success) {
-            crypto.storeCertificates(latestCertByIssuer); // only store if something changed
+            storage.storeCertificates(latestCertByIssuer); // only store if something changed
         }
         messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
         messageNode.classList.add('control');
@@ -83,14 +84,14 @@ function processMessage(messageNode) {
                     result = `Tried to add to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')}) but previous referenced key outdated!`;
                 } else {
                     groupDataByVer.set(gd.ver, gd);
-                    crypto.storeGroupData(groupDataByVer);
+                    storage.storeGroupData(groupDataByVer);
                     // for now just assume that the latest group data is the one we should keep active
                     if (!currentGroupData || gd.ts > currentGroupData.ts) {
-                        crypto.storeCurrentGroupData(gd);
+                        storage.storeCurrentGroupData(gd);
                         currentGroupData = gd;
                     }
                     oldGroupVersions.add(gd.prev);
-                    crypto.storeOldGroupVersions(oldGroupVersions);
+                    storage.storeOldGroupVersions(oldGroupVersions);
 
                     result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`
                 }
@@ -169,10 +170,10 @@ function modifyGroupAndShare(modifyFunc) {
     console.log('created new group', gd);
 
     oldGroupVersions.add(currentGroupData.ver);
-    crypto.storeOldGroupVersions(oldGroupVersions);
+    storage.storeOldGroupVersions(oldGroupVersions);
     groupDataByVer.set(gd.ver, gd);
-    crypto.storeGroupData(groupDataByVer);
-    crypto.storeCurrentGroupData(gd);
+    storage.storeGroupData(groupDataByVer);
+    storage.storeCurrentGroupData(gd);
     currentGroupData = gd;
 
     let us = getUsername();
@@ -192,8 +193,8 @@ function createGroup(groupName) {
     console.log('created new group', gd);
 
     groupDataByVer.set(gd.ver, gd);
-    crypto.storeGroupData(groupDataByVer);
-    crypto.storeCurrentGroupData(gd);
+    storage.storeGroupData(groupDataByVer);
+    storage.storeCurrentGroupData(gd);
     currentGroupData = gd;
 }
 
@@ -324,38 +325,22 @@ function handleMutations(mutationsList, observer) {
 // main code to run on script init
 (async function() {
 
-    // Restore localStorage that discord deletes
-    // taken from https://stackoverflow.com/a/53773662
-    function getLocalStoragePropertyDescriptor() {
-        const iframe = document.createElement('iframe');
-        document.head.append(iframe);
-        const pd = Object.getOwnPropertyDescriptor(iframe.contentWindow, 'localStorage');
-        iframe.remove();
-        return pd;
-    }
-    Object.defineProperty(window, 'localStorage', getLocalStoragePropertyDescriptor());
+    storage.initLocalStorage();
 
-    // Now we can retrieve the token from localstorage
-    token = localStorage.getItem("token").replace(/^"|"$/g, ''); // trim " from start and end
+    token = storage.loadToken();
 
-    try {
-        keyPair = crypto.loadKeyPair();
-        if (keyPair) {
-            console.log("loaded keypair", keyPair);
-        }
-        else { // must not exist, so generate one!
-            keyPair = await crypto.generateKeyPair();
-            console.log("no key pair found, generated one", keyPair);
-            crypto.storeKeyPair(keyPair);
-        }
-    } catch (e) {
-        console.error("failed to load keypair", e);
+    keyPair = storage.loadKeyPair();
+    if (!keyPair) { // must not exist, so generate one!
+        keyPair = await crypto.generateKeyPair();
+        console.log("no key pair found, generated one", keyPair);
+        storage.storeKeyPair(keyPair);
     }
 
-    latestCertByIssuer = crypto.loadCertificates();
-    groupDataByVer = crypto.loadGroupData();
-    currentGroupData = crypto.loadCurrentGroupData();
-    oldGroupVersions = crypto.loadOldGroupVersions();
+    latestCertByIssuer = storage.loadCertificates();
+    groupDataByVer = storage.loadGroupData();
+    currentGroupData = storage.loadCurrentGroupData();
+    oldGroupVersions = storage.loadOldGroupVersions();
+
 
     let observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true });
