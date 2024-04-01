@@ -89,11 +89,15 @@ function processMessage(messageNode) {
                 // TODO verify owner of group (as specified in gd) matches message owner (digital signature)
                 addGroupData(gd);
                 storage.storeGroupData(groupDataList);
-                // for now just assume that the latest group data is the one we should keep active
-                if (!currentGroupData || gd.ts > currentGroupData.ts) {
+                // auto join if no current group, or if we just got a new key for our current group
+                if (!currentGroupData
+                    || (gd.ts > currentGroupData.ts
+                        && gd.owner+'/'+gd.name === currentGroupData.owner+'/'+currentGroupData.name)
+                ) {
                     currentGroupData = gd;
                     storage.storeCurrentGroupData(gd);
                 }
+                setupCurrentGroupSelection(); // since the groups have changed
             }
             // Show the message even if we already have previously processed it
             result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`;
@@ -177,6 +181,7 @@ function modifyGroupAndShare(modifyFunc) {
     storage.storeGroupData(groupDataList);
     currentGroupData = gd;
     storage.storeCurrentGroupData(gd);
+    setupCurrentGroupSelection(); // since the groups have changed
 
     let us = getUsername();
     for (const user of gd.mem) {
@@ -198,13 +203,25 @@ function createGroup(groupName) {
     storage.storeGroupData(groupDataList);
     currentGroupData = gd;
     storage.storeCurrentGroupData(gd);
+    setupCurrentGroupSelection(); // since the groups have changed
 }
 
+
+// Create and insert a container for the textbox etc. above the existing message input
+function setupEncryptedContainer() {
+    let encryptedInputContainer = document.createElement('div');
+    encryptedInputContainer.classList.add('encryptInput');
+    let formDiv = document.querySelector('form > div');
+    formDiv.prepend(encryptedInputContainer);
+
+    setupTextbox();
+    setupCurrentGroupSelection();
+}
 
 // Add an input textbox to the DOM for interacting with this script
 function setupTextbox() {
     let textbox = document.createElement('input');
-    textbox.classList.add('encryptInput',
+    textbox.classList.add(
         ...document.querySelector('form [class*=scrollable]').classList, // background etc of the default textbox div
         ...document.querySelector('form [role*=textbox]').classList.values()
             .filter(c => !c.match(/slateTextArea/)), // font and text area properties (but not the positioning class)
@@ -212,10 +229,6 @@ function setupTextbox() {
 
     textbox.setAttribute('type', 'text');
     textbox.setAttribute('placeholder', 'Enter message to encrypt...');
-
-    // Insert the textbox just before the form div
-    let formDiv = document.querySelector('form > div');
-    formDiv.prepend(textbox);
 
     // Add event listener to the textbox for keydown event
     textbox.addEventListener('keydown', async function(event) {
@@ -228,14 +241,47 @@ function setupTextbox() {
             processUserInput(inputValue);
         }
     });
+
+    // Add textbox to container
+    document.querySelector('.encryptInput').append(textbox);
 }
 
+// Add a select element to allow for choosing which group you want active. If it exists, refresh the possible options
+function setupCurrentGroupSelection() {
+    let select = document.createElement('select'); // create a new one and add it
+
+    // sort by the map value ([1])'s latest key ([0])'s creation timestamp, then return just the map keys
+    let sortedKeys = [...groupDataByOwnerAndName.entries()].sort((a, b) => a[1][0].ts - b[1][0].ts).map(x => x[0]);
+    for (const ownerName of sortedKeys) {
+        let option = document.createElement('option');
+        option.textContent = ownerName;
+        option.value = ownerName;
+        option.selected = currentGroupData && (ownerName === currentGroupData.owner + '/' + currentGroupData.name);
+        select.appendChild(option);
+    }
+
+    let encryptedInputContainer = document.querySelector('.encryptInput');
+    let existingSelect = encryptedInputContainer.querySelector('select');
+    if (existingSelect) {
+        existingSelect.replaceWith(select);
+    } else {
+        encryptedInputContainer.append(select);
+    }
+
+    select.addEventListener('change', function (event) {
+        let selectedOption = event.target.value;
+        console.log('selected', selectedOption);
+        let gd = groupDataByOwnerAndName.get(selectedOption)[0]; // latest groupData for that group
+        currentGroupData = gd;
+        storage.storeCurrentGroupData(gd);
+    });
+}
 
 // Add buttons to user profile to allow adding or removing them from the current group
-function setUpProfileButtons(userPopoutInner) {
+function setupProfileButtons(userPopoutInner) {
     let name = userPopoutInner.querySelector('span[class*=userTagUsernameBase]').textContent;
-    if (name === getUsername()) {
-        return; // don't want to do anything for ourselves
+    if (name === getUsername() || !currentGroupData) {
+        return; // don't want to do anything for ourselves, or if no current group selected
     }
 
     let container = document.createElement('div');
@@ -276,8 +322,8 @@ function handleMutations(mutationsList, observer) {
             if (chatContainer != curChatContainer) {
                 curChatContainer = chatContainer;
 
-                // Textbox location is within the chat container, so create/recreate it
-                setupTextbox();
+                // Encrypted container location is within the chat container, so create/recreate it
+                setupEncryptedContainer();
 
                 // process each message that already exists, in case the container starts with messages
                 // eg on switch to a channel that was already loaded previously
@@ -305,7 +351,7 @@ function handleMutations(mutationsList, observer) {
                     if (node.id?.indexOf('popout') >= 0) {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
                         if (userPopoutInner) {
-                            setUpProfileButtons(userPopoutInner)
+                            setupProfileButtons(userPopoutInner)
                         }
                     }
                 })
@@ -314,7 +360,7 @@ function handleMutations(mutationsList, observer) {
                     if (node.tagName.toLowerCase() === 'div') {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
                         if (userPopoutInner) {
-                            setUpProfileButtons(userPopoutInner)
+                            setupProfileButtons(userPopoutInner)
                         }
                     }
                 })

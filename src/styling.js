@@ -4,7 +4,7 @@ const styles = `
     display: inline-block;*/
 }
 
-.encryptInput {
+.encryptInput input {
     border: none;
     width: 100%;
     box-sizing: border-box;

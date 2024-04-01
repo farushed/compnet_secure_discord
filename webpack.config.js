@@ -14,7 +14,7 @@ const userscriptHeaders = {
 
 module.exports = {
   mode: dev ? 'development' : 'production',
-  devtool: 'inline-source-map',
+  devtool: dev ? 'inline-source-map' : false,
   devServer: {
     static: './dist',
     client: {
