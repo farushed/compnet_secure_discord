@@ -157,6 +157,69 @@ function sendMessage(message) {
     // .catch(error => console.error('API Error:', error));
 }
 
+// Paste a file object into the main (original) textbox on discord
+// Unlike keydown events, synthesised paste event seem to work fine
+// Still requires the user to hit enter to send the file manually
+function pasteFile(file) {
+    let pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: new DataTransfer()
+    });
+    pasteEvent.clipboardData.items.add(file);
+
+    let targetTextbox = document.querySelector("div[role=textbox]");
+    targetTextbox.dispatchEvent(pasteEvent);
+}
+
+function getImageData(file) {
+    return new Promise((resolve, reject) => {
+        let reader = new FileReader();
+
+        reader.onload = function(event) {
+            let img = new Image();
+            img.src = event.target.result;
+
+            img.onload = function() {
+                let canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                let ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                resolve(imageData);
+            };
+        };
+
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function encryptImage(file) {
+    let imageData = await getImageData(file);
+
+    // TODO encrypt image .. just inverting for now
+    let data = imageData.data;
+    for (let j = 0; j < data.length; j+=4) {
+        data[j] = 255 - data[j];
+        data[j+1] = 255 - data[j+1];
+        data[j+2] = 255 - data[j+2];
+    }
+
+    // Put the encrypted image data onto a canvas
+    let canvas = document.createElement('canvas');
+    let ctx = canvas.getContext('2d');
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
+    ctx.putImageData(imageData, 0, 0);
+
+    // Convert the canvas to a file
+    return new Promise(resolve => {
+        canvas.toBlob(blob => {
+            resolve(new File([blob], 'image.png', { type: 'image/png' }));
+        }, 'image/png');
+    });
+}
+
 function tryAddUsers(...usersToAdd) {
     if (currentGroupData.owner !== getUsername()) {
         alert(`You don't own the current group "${currentGroupData.owner}/${currentGroupData.name}"`);
@@ -239,6 +302,22 @@ function setupTextbox() {
             textbox.value = '';
 
             processUserInput(inputValue);
+        }
+    });
+
+    // Add event listener for paste event, handle image paste separately
+    textbox.addEventListener('paste', async function(event) {
+        let items = (event.clipboardData || event.originalEvent.clipboardData).items;
+
+        console.log('items', items);
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                let blob = items[i].getAsFile();
+                // let blob = items[i]
+                console.log('items[i]', items[i], 'blob', i, blob);
+                let encryptedImage = await encryptImage(blob);
+                pasteFile(encryptedImage);
+            }
         }
     });
 
