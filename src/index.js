@@ -1,4 +1,5 @@
 import * as crypto from './crypto';
+import * as image from './image';
 import * as storage from './storage';
 import { setupCSS } from './styling';
 
@@ -128,6 +129,17 @@ function processMessage(messageNode) {
     }
 }
 
+async function processImage(img) {
+    // need to do this fetch because just drawing the img data onto a canvas doesn't let you extract the imageData
+    // see https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image
+    const response = await fetch(img.src);
+    const blob = await response.blob();
+    let imageData = await image.getImageData(blob);
+
+    crypto.decryptImageDataInPlace(imageData);
+    img.src = image.imageDataToDataURL(imageData, img.width, img.height);
+}
+
 function getUsername() {
     return document.querySelector("[class*=nameTag] [class*=hovered]").textContent;
 }
@@ -170,55 +182,6 @@ function pasteFile(file) {
     targetTextbox.dispatchEvent(pasteEvent);
 }
 
-function getImageData(file) {
-    return new Promise((resolve, reject) => {
-        let reader = new FileReader();
-
-        reader.onload = function(event) {
-            let img = new Image();
-            img.src = event.target.result;
-
-            img.onload = function() {
-                let canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                let ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                resolve(imageData);
-            };
-        };
-
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-}
-
-async function encryptImage(file) {
-    let imageData = await getImageData(file);
-
-    // TODO encrypt image .. just inverting for now
-    let data = imageData.data;
-    for (let j = 0; j < data.length; j+=4) {
-        data[j] = 255 - data[j];
-        data[j+1] = 255 - data[j+1];
-        data[j+2] = 255 - data[j+2];
-    }
-
-    // Put the encrypted image data onto a canvas
-    let canvas = document.createElement('canvas');
-    let ctx = canvas.getContext('2d');
-    canvas.width = imageData.width;
-    canvas.height = imageData.height;
-    ctx.putImageData(imageData, 0, 0);
-
-    // Convert the canvas to a file
-    return new Promise(resolve => {
-        canvas.toBlob(blob => {
-            resolve(new File([blob], 'image.png', { type: 'image/png' }));
-        }, 'image/png');
-    });
-}
 
 function tryAddUsers(...usersToAdd) {
     if (currentGroupData.owner !== getUsername()) {
@@ -313,10 +276,11 @@ function setupTextbox() {
         for (let i = 0; i < items.length; i++) {
             if (items[i].type.indexOf('image') !== -1) {
                 let blob = items[i].getAsFile();
-                // let blob = items[i]
-                console.log('items[i]', items[i], 'blob', i, blob);
-                let encryptedImage = await encryptImage(blob);
-                pasteFile(encryptedImage);
+                let imageData = await image.getImageData(blob);
+
+                crypto.encryptImageDataInPlace(imageData);
+                let file = await image.imageDataToFile(imageData);
+                pasteFile(file);
             }
         }
     });
@@ -406,20 +370,25 @@ function handleMutations(mutationsList, observer) {
 
                 // process each message that already exists, in case the container starts with messages
                 // eg on switch to a channel that was already loaded previously
-                let messageNodes = chatContainer.querySelectorAll('[class*=messageContent]');
-
-                for (const messageNode of messageNodes) {
-                    processMessage(messageNode);
-                }
+                chatContainer.querySelectorAll('[class*=messageContent]').forEach(processMessage);
+                chatContainer.querySelectorAll('img[class*=lazyImg]').forEach(processImage);
             }
 
             // Handle newly added messages
             if (mutation.target.tagName.toLowerCase() === 'ol') { // Check if it's being added to the list of messages
                 mutation.addedNodes.forEach(node => {
                     if (node.getAttribute('class')?.indexOf('messageListItem') >= 0) { // Check if new node is a message
-                        let messageNode = node.querySelector('[class*=messageContent]');
+                        processMessage(node.querySelector('[class*=messageContent]'));
+                    }
+                });
+            }
 
-                        processMessage(messageNode);
+            // Handle newly loaded images
+            if (mutation.target.getAttribute('class')?.indexOf('loadingOverlay') !== -1) {
+                // chatContainer.querySelectorAll('[class*=ListItem]').forEach(n => processImages(n));
+                mutation.addedNodes.forEach(async function (node) {
+                    if (node.tagName.toLowerCase() === 'img') {
+                        await processImage(node);
                     }
                 });
             }

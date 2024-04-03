@@ -141,3 +141,26 @@ export function decrypt(groupDataByVer, message) {
 
     throw Error('Could not decrypt');
 }
+
+
+export function encryptImageDataInPlace(imageData) {
+    // TODO encrypt image .. just inverting for now
+
+    let data = imageData.data;
+    for (let j = 0; j < data.length; j+=4) {
+        data[j] = 255 - data[j];
+        data[j+1] = 255 - data[j+1];
+        data[j+2] = 255 - data[j+2];
+    }
+}
+
+export function decryptImageDataInPlace(imageData) {
+    // TODO decrypt image .. just inverting for now
+
+    let data = imageData.data;
+    for (let j = 0; j < data.length; j+=4) {
+        data[j] = 255 - data[j];
+        data[j+1] = 255 - data[j+1];
+        data[j+2] = 255 - data[j+2];
+    }
+}
