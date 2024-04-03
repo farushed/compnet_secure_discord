@@ -145,23 +145,27 @@ function getUsername() {
 }
 
 // Send a message in our custom format (~`message`) using the Discord API
-function sendMessage(message) {
+// Allows including files (images!) to be sent with the message
+function sendMessage(message, files=[]) {
     let segments = window.location.pathname.split("?")[0].split("/");
     let channelId = segments[segments.length-1];
 
+    files.forEach(file => {message += '|' + file.name});
+
     // start with ~ (just as a flag), then surround in code block
     message = '~`' + message.replaceAll('`', '\\`') + '`'
+
+    const formData = new FormData();
+    formData.append('content', message);
+    files.forEach((file, idx) => formData.append(`files[${idx}]`, file));
 
     // Send the API request
     fetch(`https://discord.com/api/v9/channels/${channelId}/messages`, {
         "method": "POST",
         "headers": {
-            "content-type": "application/json",
             "authorization": token
         },
-        "body": JSON.stringify({
-            content: message
-        }),
+        "body": formData,
         "credentials": "include"
     })
     // .then(response => response.json())
@@ -280,7 +284,7 @@ function setupTextbox() {
 
                 crypto.encryptImageDataInPlace(imageData);
                 let file = await image.imageDataToFile(imageData);
-                pasteFile(file);
+                sendMessage('', [file]);
             }
         }
     });
