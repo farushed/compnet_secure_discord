@@ -12,6 +12,15 @@ const styles = `
     padding-left: 1em;
 }
 
+.encryptInput #displayedFiles {
+    display: flex;
+}
+
+.encryptInput img {
+    max-width: 200px;
+    max-height: 200px;
+}
+
 [class*=markup][class*=messageContent] div {
     border-radius: 5px;
     background-clip: content-box;

@@ -15,7 +15,7 @@ let groupDataByOwnerAndName = new Map();
 let currentGroupData;
 
 // Process user input and execute commands if applicable
-async function processUserInput(input) {
+async function processUserInput(input, files) {
     if (input === '!keypair') {
         keyPair = await crypto.generateKeyPair();
         console.log("generated key pair", keyPair);
@@ -39,8 +39,15 @@ async function processUserInput(input) {
     else {
         if (currentGroupData) {
             input = crypto.encrypt(currentGroupData, input);
-            console.log('sending', input);
-            sendMessage(input);
+
+            let encryptedFiles = await Promise.all(files.map(async file => {
+                let imageData = await image.getImageData(file);
+                crypto.encryptImageDataInPlace(imageData);
+                return await image.imageDataToFile(imageData);
+            }));
+
+            console.log('sending', input, encryptedFiles);
+            sendMessage(input, encryptedFiles);
         } else {
             alert('No group/symmetric key in place yet');
         }
@@ -64,7 +71,8 @@ function processMessage(messageNode) {
         return;
     }
 
-    let text = messageNode.children[1].innerText;
+    let originalText = messageNode.children[1].innerText;
+    let text = originalText.split('|')[0]; // | is the separator for attatchment info
 
     // extract message timestamp from discord message snowflake id
     // https://discord.com/developers/docs/reference#snowflakes
@@ -77,7 +85,7 @@ function processMessage(messageNode) {
         if (success) {
             storage.storeCertificates(latestCertByIssuer); // only store if something changed
         }
-        messageNode.innerHTML = `<div><p class="encrypted">${text}</p></div>`;
+        messageNode.innerHTML = `<div><p class="encrypted">${originalText}</p></div>`;
         messageNode.classList.add('control');
     }
     else if (text.startsWith('_')) {
@@ -103,7 +111,7 @@ function processMessage(messageNode) {
             // Show the message even if we already have previously processed it
             result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`;
         }
-        messageNode.innerHTML = `<div><p class="encrypted">${text}</p><p class="decrypted">${result}</p></div>`;
+        messageNode.innerHTML = `<div><p class="encrypted">${originalText}</p><p class="decrypted">${result}</p></div>`;
         messageNode.classList.add('control');
     }
     else {
@@ -115,7 +123,7 @@ function processMessage(messageNode) {
                             +`${warn?"OLD KEY&emsp;":""}${gdUsed.owner}/${gdUsed.name}&emsp;`
                             +`</span>`;
             messageNode.innerHTML = `<div>`
-                                    +`<p class="encrypted">${groupInfo}${text}</p>`
+                                    +`<p class="encrypted">${groupInfo}${originalText}</p>`
                                     +`<p class="decrypted">${decrypted}</p>`
                                     +`</div>`;
             messageNode.classList.add('encrypted');
@@ -127,9 +135,28 @@ function processMessage(messageNode) {
             messageNode.classList.add('plaintext');
         }
     }
+
+    let originalTextNode = document.createElement('div'); // keep a copy of the original text eg for use in processImage
+    originalTextNode.textContent = originalText;
+    originalTextNode.style.display = 'none';
+    originalTextNode.classList.add('original');
+    messageNode.appendChild(originalTextNode);
 }
 
 async function processImage(img) {
+    let messageNode = img.closest('li').querySelector('[class*=messageContent]');
+    let originalTextNode = messageNode.querySelector('.original');
+    console.log(img, messageNode, originalTextNode);
+    if (!originalTextNode) {
+        return; // don't need to do anything to the image
+    }
+
+    // find which image we are - which message attatchment field applies to us
+    let imageIndex = Array.from(img.closest('[class*=mediaAttachmentsContainer]')
+                        .querySelectorAll('div[class*=loadingOverlay]')).indexOf(img.parentNode);
+    let text = originalTextNode.innerText;
+    text = text.split('|')[imageIndex+1] // | is the separator for attatchment info
+    console.log('found', messageNode, imageIndex, text)
     // need to do this fetch because just drawing the img data onto a canvas doesn't let you extract the imageData
     // see https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image
     const response = await fetch(img.src);
@@ -248,8 +275,48 @@ function setupEncryptedContainer() {
     setupCurrentGroupSelection();
 }
 
+// Store the list of files to be sent with the rest of user input
+let currentFiles = [];
+
 // Add an input textbox to the DOM for interacting with this script
 function setupTextbox() {
+    // A container to hold 'uploaded' files
+    let displayedFiles = document.createElement('div');
+    displayedFiles.id = 'displayedFiles';
+    document.querySelector('.encryptInput').append(displayedFiles);
+
+    function addToDisplayed(file) {
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            let img = document.createElement('img');
+            img.src = event.target.result;
+            img.addEventListener('click', () => {
+                displayedFiles.removeChild(img);
+                let idx = currentFiles.indexOf(file);
+                if (idx !== -1) {
+                    currentFiles.splice(idx, 1);
+                }
+            })
+            displayedFiles.appendChild(img);
+        }
+        reader.readAsDataURL(file);
+    }
+
+    // Add file input to container
+    let fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.multiple = true;
+    fileInput.addEventListener('change', function (event) {
+        Array.from(event.target.files).forEach(file => {
+            currentFiles.push(file);
+            addToDisplayed(file);
+        });
+    })
+    document.querySelector('.encryptInput').append(fileInput);
+
+
+    // Create the actual textbox
     let textbox = document.createElement('input');
     textbox.classList.add(
         ...document.querySelector('form [class*=scrollable]').classList, // background etc of the default textbox div
@@ -265,10 +332,11 @@ function setupTextbox() {
         if (event.key === "Enter") {
             event.preventDefault();
 
-            let inputValue = textbox.value;
-            textbox.value = '';
+            processUserInput(textbox.value, currentFiles);
 
-            processUserInput(inputValue);
+            textbox.value = '';
+            currentFiles = [];
+            displayedFiles.innerHTML = '';
         }
     });
 
@@ -279,12 +347,9 @@ function setupTextbox() {
         console.log('items', items);
         for (let i = 0; i < items.length; i++) {
             if (items[i].type.indexOf('image') !== -1) {
-                let blob = items[i].getAsFile();
-                let imageData = await image.getImageData(blob);
-
-                crypto.encryptImageDataInPlace(imageData);
-                let file = await image.imageDataToFile(imageData);
-                sendMessage('', [file]);
+                let file = items[i].getAsFile();
+                currentFiles.push(file);
+                addToDisplayed(file);
             }
         }
     });
@@ -381,14 +446,14 @@ function handleMutations(mutationsList, observer) {
             // Handle newly added messages
             if (mutation.target.tagName.toLowerCase() === 'ol') { // Check if it's being added to the list of messages
                 mutation.addedNodes.forEach(node => {
-                    if (node.getAttribute('class')?.indexOf('messageListItem') >= 0) { // Check if new node is a message
+                    if (node.matches('[class*=messageListItem]')) { // Check if new node is a message
                         processMessage(node.querySelector('[class*=messageContent]'));
                     }
                 });
             }
 
             // Handle newly loaded images
-            if (mutation.target.getAttribute('class')?.indexOf('loadingOverlay') !== -1) {
+            if (mutation.target.matches('[class*=loadingOverlay]')) {
                 // chatContainer.querySelectorAll('[class*=ListItem]').forEach(n => processImages(n));
                 mutation.addedNodes.forEach(async function (node) {
                     if (node.tagName.toLowerCase() === 'img') {
@@ -400,14 +465,14 @@ function handleMutations(mutationsList, observer) {
             // Handle the user profile popout appearing. If it has to load, the div we're interested in appears later
             if (mutation.target.getAttribute('class')?.startsWith('layerContainer')) {
                 mutation.addedNodes.forEach(node => {
-                    if (node.id?.indexOf('popout') >= 0) {
+                    if (node.matches('[id*=popout]')) {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
                         if (userPopoutInner) {
                             setupProfileButtons(userPopoutInner)
                         }
                     }
                 })
-            } else if (mutation.target.getAttribute('id')?.startsWith('popout')) {
+            } else if (mutation.target.matches('[id*=popout]')) {
                 mutation.addedNodes.forEach(node => {
                     if (node.tagName.toLowerCase() === 'div') {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
