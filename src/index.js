@@ -40,14 +40,18 @@ async function processUserInput(input, files) {
         if (currentGroupData) {
             input = crypto.encrypt(currentGroupData, input);
 
-            let encryptedFiles = await Promise.all(files.map(async file => {
+            let encryptedFiles = [];
+            let fileMetadata = [];
+            for (const file of files) {
                 let imageData = await image.getImageData(file);
-                crypto.encryptImageDataInPlace(imageData);
-                return await image.imageDataToFile(imageData);
-            }));
+                let {encryptedImageData, metadata} = crypto.encryptImageData(currentGroupData, imageData);
 
-            console.log('sending', input, encryptedFiles);
-            sendMessage(input, encryptedFiles);
+                encryptedFiles.push(await image.imageDataToFile(encryptedImageData));
+                fileMetadata.push(metadata);
+            }
+
+            console.log('sending', input, encryptedFiles, fileMetadata);
+            sendMessage(input, encryptedFiles, fileMetadata);
         } else {
             alert('No group/symmetric key in place yet');
         }
@@ -157,14 +161,15 @@ async function processImage(img) {
     let text = originalTextNode.innerText;
     text = text.split('|')[imageIndex+1] // | is the separator for attatchment info
     console.log('found', messageNode, imageIndex, text)
+
     // need to do this fetch because just drawing the img data onto a canvas doesn't let you extract the imageData
     // see https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image
-    const response = await fetch(img.src);
+    const response = await fetch(img.src.replace(/&?(?:width|height)=[^&]*/g, '')); // load full image so we can decrypt it properly!
     const blob = await response.blob();
     let imageData = await image.getImageData(blob);
 
-    crypto.decryptImageDataInPlace(imageData);
-    img.src = image.imageDataToDataURL(imageData, img.width, img.height);
+    let decryptedImageData = crypto.decryptImageData(groupDataByVer, text, imageData);
+    img.src = image.imageDataToDataURL(decryptedImageData);
 }
 
 function getUsername() {
@@ -173,11 +178,11 @@ function getUsername() {
 
 // Send a message in our custom format (~`message`) using the Discord API
 // Allows including files (images!) to be sent with the message
-function sendMessage(message, files=[]) {
+function sendMessage(message, files=[], fileMetadata=[]) {
     let segments = window.location.pathname.split("?")[0].split("/");
     let channelId = segments[segments.length-1];
 
-    files.forEach(file => {message += '|' + file.name});
+    fileMetadata.forEach(fm => {message += '|' + fm});
 
     // start with ~ (just as a flag), then surround in code block
     message = '~`' + message.replaceAll('`', '\\`') + '`'

@@ -143,24 +143,56 @@ export function decrypt(groupDataByVer, message) {
 }
 
 
-export function encryptImageDataInPlace(imageData) {
-    // TODO encrypt image .. just inverting for now
+export function encryptImageData(groupData, imageData) {
+    let iv = generateIV();
 
-    let data = imageData.data;
-    for (let j = 0; j < data.length; j+=4) {
-        data[j] = 255 - data[j];
-        data[j+1] = 255 - data[j+1];
-        data[j+2] = 255 - data[j+2];
+    // let cipher = forge.cipher.createCipher('AES-GCM', groupData.key);
+    let cipher = forge.cipher.createCipher('AES-CTR', groupData.key);
+
+    cipher.start({iv: iv});
+    cipher.update(forge.util.createBuffer(new Uint8Array(imageData.data.buffer)));
+    cipher.finish();
+
+    let rawBytesString = cipher.output.bytes();
+    let bytes = [];
+    for (let i = 0; i < rawBytesString.length; i++) {
+        bytes.push(rawBytesString.charCodeAt(i));
+    }
+    let encryptedImageData = new ImageData(new Uint8ClampedArray(bytes), imageData.width, imageData.height);
+
+    return {
+        encryptedImageData,
+        metadata: forge.util.encode64(groupData.ver.slice(0,4))
+            + ':' + forge.util.encode64(iv)
+            // + ':' + forge.util.encode64(cipher.mode.tag.bytes())
     }
 }
 
-export function decryptImageDataInPlace(imageData) {
-    // TODO decrypt image .. just inverting for now
+export function decryptImageData(groupDataByVer, metadata, imageData) {
+    let parts = metadata.split(':');
+    let ver   = forge.util.decode64(parts[0]);
+    let iv    = forge.util.decode64(parts[1]);
+    // let tag   = forge.util.decode64(parts[2]);
 
-    let data = imageData.data;
-    for (let j = 0; j < data.length; j+=4) {
-        data[j] = 255 - data[j];
-        data[j+1] = 255 - data[j+1];
-        data[j+2] = 255 - data[j+2];
+    for (const gd of groupDataByVer.values()) {
+        if (gd.ver.slice(0,4) === ver) { // TODO what if there are multiple
+            // let decipher = forge.cipher.createDecipher('AES-GCM', gd.key);
+            let decipher = forge.cipher.createDecipher('AES-CTR', gd.key);
+            // decipher.start({iv: iv, tag: tag});
+            decipher.start({iv: iv});
+            decipher.update(forge.util.createBuffer(new Uint8Array(imageData.data.buffer)));
+
+            let result = decipher.finish();
+            if (result) {
+                let rawBytesString = decipher.output.bytes();
+                let bytes = [];
+                for (let i = 0; i < rawBytesString.length; i++) {
+                    bytes.push(rawBytesString.charCodeAt(i));
+                }
+                return new ImageData(new Uint8ClampedArray(bytes), imageData.width, imageData.height);
+            }
+        }
     }
+
+    throw Error('Could not decrypt');
 }
