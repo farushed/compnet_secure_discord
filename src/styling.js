@@ -4,7 +4,7 @@ const styles = `
     display: inline-block;*/
 }
 
-.encryptInput input {
+#encryptInput input {
     border: none;
     width: 100%;
     box-sizing: border-box;
@@ -12,11 +12,11 @@ const styles = `
     padding-left: 1em;
 }
 
-.encryptInput #displayedFiles {
+#encryptInput #displayedFiles {
     display: flex;
 }
 
-.encryptInput img {
+#encryptInput img {
     max-width: 200px;
     max-height: 200px;
 }
@@ -43,6 +43,10 @@ const styles = `
 
 [class*=markup][class*=messageContent].control p {
     background-color: rgba(94, 64, 191, 0.05)
+}
+
+[class*=buttonsInner] div.encrypted {
+    color: rgba(9, 255, 9, 0.5);
 }
 
 p.encrypted {

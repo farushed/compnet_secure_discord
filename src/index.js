@@ -15,7 +15,7 @@ let groupDataByOwnerAndName = new Map();
 let currentGroupData;
 
 // Process user input and execute commands if applicable
-async function processUserInput(input, files) {
+async function processUserInput(input, files, replyTo) {
     if (input === '!keypair') {
         keyPair = await crypto.generateKeyPair();
         console.log("generated key pair", keyPair);
@@ -51,7 +51,7 @@ async function processUserInput(input, files) {
             }
 
             console.log('sending', input, encryptedFiles, fileMetadata);
-            sendMessage(input, encryptedFiles, fileMetadata);
+            sendMessage(input, encryptedFiles, fileMetadata, replyTo);
         } else {
             alert('No group/symmetric key in place yet');
         }
@@ -80,7 +80,7 @@ function processMessage(messageNode) {
 
     // extract message timestamp from discord message snowflake id
     // https://discord.com/developers/docs/reference#snowflakes
-    let messageId = messageNode.id.match(/-(\d+)/)[1];
+    let messageId = messageNode.id.match(/-(\d+)$/)[1];
     let messageTimestamp = Number((BigInt(messageId) >> 22n) + 1420070400000n);
 
     if (text.startsWith('-----BEGIN')) {
@@ -190,7 +190,7 @@ function getUsername() {
 
 // Send a message in our custom format (~`message`) using the Discord API
 // Allows including files (images!) to be sent with the message
-function sendMessage(message, files=[], fileMetadata=[]) {
+function sendMessage(message, files=[], fileMetadata=[], replyTo=null) {
     let segments = window.location.pathname.split("?")[0].split("/");
     let channelId = segments[segments.length-1];
 
@@ -199,8 +199,17 @@ function sendMessage(message, files=[], fileMetadata=[]) {
     // start with ~ (just as a flag), then surround in code block
     message = '~`' + message.replaceAll('`', '\\`') + '`'
 
+    let payload = {
+        'content': message
+    }
+    if (replyTo) {
+        payload['message_reference'] = {
+            'message_id': replyTo
+        }
+    }
+
     const formData = new FormData();
-    formData.append('content', message);
+    formData.append('payload_json', JSON.stringify(payload))
     files.forEach((file, idx) => formData.append(`files[${idx}]`, file));
 
     // Send the API request
@@ -284,23 +293,23 @@ function createGroup(groupName) {
 // Create and insert a container for the textbox etc. above the existing message input
 function setupEncryptedContainer() {
     let encryptedInputContainer = document.createElement('div');
-    encryptedInputContainer.classList.add('encryptInput');
+    encryptedInputContainer.id = 'encryptInput';
     let formDiv = document.querySelector('form > div');
     formDiv.prepend(encryptedInputContainer);
 
-    setupTextbox();
-    setupCurrentGroupSelection();
+    setupTextbox(encryptedInputContainer);
+    setupCurrentGroupSelection(encryptedInputContainer);
 }
 
-// Store the list of files to be sent with the rest of user input
-let currentFiles = [];
+let currentFiles = []; // Store the list of files to be sent with the rest of user input
+let currentReply = null; // Store the ID of the message we are currently replying to
 
 // Add an input textbox to the DOM for interacting with this script
-function setupTextbox() {
+function setupTextbox(encryptedInputContainer) {
     // A container to hold 'uploaded' files
     let displayedFiles = document.createElement('div');
     displayedFiles.id = 'displayedFiles';
-    document.querySelector('.encryptInput').append(displayedFiles);
+    encryptedInputContainer.append(displayedFiles);
 
     function addToDisplayed(file) {
         const reader = new FileReader();
@@ -330,8 +339,11 @@ function setupTextbox() {
             addToDisplayed(file);
         });
     })
-    document.querySelector('.encryptInput').append(fileInput);
+    encryptedInputContainer.append(fileInput);
 
+    let replyingToField = document.createElement('p');
+    replyingToField.id = 'replyingTo';
+    encryptedInputContainer.append(replyingToField);
 
     // Create the actual textbox
     let textbox = document.createElement('input');
@@ -349,11 +361,13 @@ function setupTextbox() {
         if (event.key === "Enter") {
             event.preventDefault();
 
-            processUserInput(textbox.value, currentFiles);
+            processUserInput(textbox.value, currentFiles, currentReply);
 
             textbox.value = '';
             currentFiles = [];
             displayedFiles.innerHTML = '';
+            currentReply = null;
+            replyingToField.innerHTML = '';
         }
     });
 
@@ -372,11 +386,12 @@ function setupTextbox() {
     });
 
     // Add textbox to container
-    document.querySelector('.encryptInput').append(textbox);
+    encryptedInputContainer.append(textbox);
 }
 
 // Add a select element to allow for choosing which group you want active. If it exists, refresh the possible options
-function setupCurrentGroupSelection() {
+function setupCurrentGroupSelection(encryptedInputContainer) {
+    encryptedInputContainer = encryptedInputContainer ?? document.querySelector('#encryptInput');
     let select = document.createElement('select'); // create a new one and add it
 
     // sort by the map value ([1])'s latest key ([0])'s creation timestamp, then return just the map keys
@@ -389,7 +404,6 @@ function setupCurrentGroupSelection() {
         select.appendChild(option);
     }
 
-    let encryptedInputContainer = document.querySelector('.encryptInput');
     let existingSelect = encryptedInputContainer.querySelector('select');
     if (existingSelect) {
         existingSelect.replaceWith(select);
@@ -439,6 +453,22 @@ function setupProfileButtons(userPopoutInner) {
     divider.parentNode.insertBefore(container, divider);
 }
 
+// Add button to message hover buttons that lets you reply to a message with encryption
+function addEncryptedReplyButton(buttonsInnerContainer) {
+    let button = buttonsInnerContainer.firstChild.cloneNode(true);
+    button.innerHTML = `<svg class="icon_e3aee9" aria-hidden="true" role="img" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M2.3 7.3a1 1 0 0 0 0 1.4l5 5a1 1 0 0 0 1.4-1.4L5.42 9H11a7 7 0 0 1 7 7v4a1 1 0 1 0 2 0v-4a9 9 0 0 0-9-9H5.41l3.3-3.3a1 1 0 0 0-1.42-1.4l-5 5Z" class="">
+        </path></svg>`;
+    button.classList.add('encrypted');
+    buttonsInnerContainer.prepend(button);
+
+    button.addEventListener('click', (event) => {
+        // set the reply field to the current message's message ID
+        currentReply = buttonsInnerContainer.closest('li').id.match(/-(\d+)$/)[1];
+        console.log('set', currentReply);
+        document.querySelector('#replyingTo').innerHTML = `Replying to ${currentReply}`;
+    })
+}
 
 let curChatContainer = null;
 
@@ -460,28 +490,30 @@ function handleMutations(mutationsList, observer) {
                 chatContainer.querySelectorAll('img[class*=lazyImg]').forEach(processImage);
             }
 
-            // Handle newly added messages
-            if (mutation.target.tagName.toLowerCase() === 'ol') { // Check if it's being added to the list of messages
-                mutation.addedNodes.forEach(node => {
+            // console.log(mutation);
+            mutation.addedNodes.forEach(async node => {
+                // Handle newly added messages
+                if (mutation.target.tagName.toLowerCase() === 'ol') { // Check if it's being added to the list of messages
                     if (node.matches('[class*=messageListItem]')) { // Check if new node is a message
-                        processMessage(node.querySelector('[class*=messageContent]'));
+                        // Process each messageContent in case there's multiple (replies have two messageContents!)
+                        node.querySelectorAll('[class*=messageContent]').forEach(processMessage);
                     }
-                });
-            }
+                }
 
-            // Handle newly loaded images
-            if (mutation.target.matches('[class*=loadingOverlay]')) {
-                // chatContainer.querySelectorAll('[class*=ListItem]').forEach(n => processImages(n));
-                mutation.addedNodes.forEach(async function (node) {
+                else if (mutation.target.matches('div[class*=message_]')) {
+                    addEncryptedReplyButton(node.querySelector('[class*=buttonsInner]'));
+                }
+
+                // Handle newly loaded images
+                else if (mutation.target.matches('[class*=loadingOverlay]')) {
+                    // chatContainer.querySelectorAll('[class*=ListItem]').forEach(n => processImages(n));
                     if (node.matches('img:not(.ignoreForDecryption)')) {
                         await processImage(node);
                     }
-                });
-            }
+                }
 
-            // Handle the user profile popout appearing. If it has to load, the div we're interested in appears later
-            if (mutation.target.getAttribute('class')?.startsWith('layerContainer')) {
-                mutation.addedNodes.forEach(async node => {
+                // Handle the user profile popout appearing. If it has to load, the div we're interested in appears later
+                else if (mutation.target.getAttribute('class')?.startsWith('layerContainer')) {
                     if (node.matches('[id*=popout]')) {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
                         if (userPopoutInner) {
@@ -504,17 +536,15 @@ function handleMutations(mutationsList, observer) {
                             }
                         }
                     }
-                })
-            } else if (mutation.target.matches('[id*=popout]')) {
-                mutation.addedNodes.forEach(node => {
+                } else if (mutation.target.matches('[id*=popout]')) {
                     if (node.tagName.toLowerCase() === 'div') {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
                         if (userPopoutInner) {
                             setupProfileButtons(userPopoutInner)
                         }
                     }
-                })
-            }
+                }
+            });
         }
     }
 }
