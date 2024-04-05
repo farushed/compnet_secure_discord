@@ -147,10 +147,21 @@ function processMessage(messageNode) {
     messageNode.appendChild(originalTextNode);
 }
 
+
+let decryptedImageCache = new Map();
+
+// Process a newly added image node by looking at the message it's linked to for metadata
+// Decrypt if possible, and swap the decrypted data in
 async function processImage(img) {
+    // remove the width and height parameters on the src, since we can't decrypt a completely compressed image
+    let src = img.src.replace(/&?(?:width|height)=[^&]*/g, '');
+    if (decryptedImageCache.has(src)) {
+        img.src = decryptedImageCache.get(src);
+        return;
+    }
+
     let messageNode = img.closest('li').querySelector('[class*=messageContent]');
     let originalTextNode = messageNode.querySelector('.original');
-    console.log(img, messageNode, originalTextNode);
     if (!originalTextNode) {
         return; // don't need to do anything to the image
     }
@@ -160,16 +171,17 @@ async function processImage(img) {
                         .querySelectorAll('div[class*=loadingOverlay]')).indexOf(img.parentNode);
     let text = originalTextNode.innerText;
     text = text.split('|')[imageIndex+1] // | is the separator for attatchment info
-    console.log('found', messageNode, imageIndex, text)
 
     // need to do this fetch because just drawing the img data onto a canvas doesn't let you extract the imageData
     // see https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image
-    const response = await fetch(img.src.replace(/&?(?:width|height)=[^&]*/g, '')); // load full image so we can decrypt it properly!
+    const response = await fetch(src); // load full image so we can decrypt it properly!
     const blob = await response.blob();
     let imageData = await image.getImageData(blob);
 
     let decryptedImageData = crypto.decryptImageData(groupDataByVer, text, imageData);
-    img.src = image.imageDataToDataURL(decryptedImageData);
+    let decryptedDataUrl = image.imageDataToDataURL(decryptedImageData);
+    decryptedImageCache.set(src, decryptedDataUrl);
+    img.src = decryptedDataUrl;
 }
 
 function getUsername() {
@@ -461,7 +473,7 @@ function handleMutations(mutationsList, observer) {
             if (mutation.target.matches('[class*=loadingOverlay]')) {
                 // chatContainer.querySelectorAll('[class*=ListItem]').forEach(n => processImages(n));
                 mutation.addedNodes.forEach(async function (node) {
-                    if (node.tagName.toLowerCase() === 'img') {
+                    if (node.matches('img:not(.ignoreForDecryption)')) {
                         await processImage(node);
                     }
                 });
@@ -469,11 +481,27 @@ function handleMutations(mutationsList, observer) {
 
             // Handle the user profile popout appearing. If it has to load, the div we're interested in appears later
             if (mutation.target.getAttribute('class')?.startsWith('layerContainer')) {
-                mutation.addedNodes.forEach(node => {
+                mutation.addedNodes.forEach(async node => {
                     if (node.matches('[id*=popout]')) {
                         let userPopoutInner = node.querySelector('[class*=userPopoutInner]');
                         if (userPopoutInner) {
                             setupProfileButtons(userPopoutInner)
+                        }
+                    }
+                    // also handle image popouts - just reuse the already cached decrypted image if we can
+                    // it would be hard to get a reference to the message itself
+                    else if (node.matches('[class*=layer_]')) {
+                        let img = node.querySelector('[class*=loadingOverlay] img')
+                        if (img) {
+                            let dataUrl = decryptedImageCache.get(img.src.replace(/&?(?:width|height)=[^&]*/g, ''));
+
+                            if (dataUrl) {
+                                const cloned = img.cloneNode(true);
+                                cloned.classList.add('ignoreForDecryption');
+                                cloned.src = dataUrl;
+                                img.parentNode.insertBefore(cloned, img);
+                                img.style.display = 'none';
+                            }
                         }
                     }
                 })
