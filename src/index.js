@@ -1,7 +1,7 @@
 import * as crypto from './crypto';
 import * as image from './image';
 import * as storage from './storage';
-import { setupCSS } from './styling';
+import * as styling from './styling';
 
 
 // Global variables, to be initialised in main setup function
@@ -34,7 +34,7 @@ async function processUserInput(input, files, replyTo) {
         tryAddUsers(...input.substring('!add'.length).trim().split(/\s+/));
     }
     else if (input.startsWith('!rm')) {
-        tryRemoveUsers(input.substring('!rm'.length).trim().split(/\s+/));
+        tryRemoveUsers(...input.substring('!rm'.length).trim().split(/\s+/));
     }
     else {
         if (currentGroupData) {
@@ -111,6 +111,7 @@ function processMessage(messageNode) {
                     storage.storeCurrentGroupData(gd);
                 }
                 setupCurrentGroupSelection(); // since the groups have changed
+                setCSSForCurrentGroupData();
             }
             // Show the message even if we already have previously processed it
             result = `Added to group "${gd.owner}/${gd.name}" (${gd.mem.join(', ')})`;
@@ -126,7 +127,7 @@ function processMessage(messageNode) {
             let groupInfo = `<span style="font-size:2.5em">`
                             +`${warn?"OLD KEY&emsp;":""}${gdUsed.owner}/${gdUsed.name}&emsp;`
                             +`</span>`;
-            messageNode.innerHTML = `<div>`
+            messageNode.innerHTML = `<div class="${gdUsed.owner}${gdUsed.ts}${gdUsed.name}">`
                                     +`<p class="encrypted">${groupInfo}${originalText}</p>`
                                     +`<p class="decrypted">${decrypted}</p>`
                                     +`</div>`;
@@ -146,6 +147,13 @@ function processMessage(messageNode) {
     originalTextNode.style.display = 'none';
     originalTextNode.classList.add('original');
     messageNode.appendChild(originalTextNode);
+}
+
+function setCSSForCurrentGroupData() {
+    let classes = [...groupDataByOwnerAndName.values()]
+        .map(gdList => gdList[0])
+        .map(gd => gd.owner + gd.ts + gd.name);
+    styling.updateCurrentMessagesCSS(classes);
 }
 
 
@@ -266,6 +274,7 @@ function modifyGroupAndShare(modifyFunc) {
     currentGroupData = gd;
     storage.storeCurrentGroupData(gd);
     setupCurrentGroupSelection(); // since the groups have changed
+    setCSSForCurrentGroupData();
 
     let us = getUsername();
     for (const user of gd.mem) {
@@ -359,6 +368,7 @@ function setupTextbox(encryptedInputContainer) {
     let replyingToField = document.createElement('p');
     replyingToField.id = 'replyingTo';
     encryptedInputContainer.append(replyingToField);
+    replyingToField.style.display = 'none';
 
     // Create the actual textbox
     let textbox = document.createElement('input');
@@ -382,6 +392,7 @@ function setupTextbox(encryptedInputContainer) {
             displayedFiles.innerHTML = '';
             currentReply = null;
             replyingToField.innerHTML = '';
+            replyingToField.style.display = 'none';
         }
     });
 
@@ -438,7 +449,7 @@ function setupCurrentGroupSelection(encryptedInputContainer) {
         });
     }
 
-    let existingSelect = encryptedInputContainer.querySelector('select');
+    let existingSelect = encryptedInputContainer.querySelector('#groupSelect');
     if (existingSelect) {
         existingSelect.replaceWith(select);
     } else {
@@ -505,7 +516,9 @@ function addEncryptedReplyButton(buttonsInnerContainer) {
         // set the reply field to the current message's message ID
         currentReply = buttonsInnerContainer.closest('li').id.match(/-(\d+)$/)[1];
         console.log('set', currentReply);
-        document.querySelector('#replyingTo').innerHTML = `Replying to ${currentReply}`;
+        let replyingTo = document.querySelector('#replyingTo');
+        replyingTo.innerHTML = `Replying to ${currentReply}`;
+        replyingTo.style.display = 'inherit';
     });
 }
 
@@ -665,11 +678,12 @@ function addGroupData(gd) {
         addGroupData(gd);
     }
     currentGroupData = storage.loadCurrentGroupData();
+    setCSSForCurrentGroupData();
 
 
     let observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true });
 
 
-    setupCSS();
+    styling.setupCSS();
 })();

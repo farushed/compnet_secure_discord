@@ -30,6 +30,15 @@ const styles = `
     box-sizing: border-box;
 }
 
+#replyingTo {
+    color: var(--text-normal);
+    padding-right: 12px;
+}
+
+[class*=repliedTextPreview]:has(.encrypted) {
+    max-height: 5em;
+}
+
 #groupSelect {
     border: none;
     color: white;
@@ -77,14 +86,9 @@ const styles = `
     overflow: hidden;
 }
 
-/*
-[class*=markup][class*=messageContent].plaintext div {
-    background-color: rgba(255, 100, 100, 0.05);
-}
-*/
-
+/* encrypted, but not with the current group data */
 [class*=markup][class*=messageContent].encrypted div {
-    background-color: rgba(9, 255, 9, 0.1);
+    background-color: rgba(100, 255, 100, 0.1);
 }
 
 [class*=markup][class*=messageContent].encrypted.old div {
@@ -151,3 +155,27 @@ export function setupCSS() {
     styleElement.textContent = styles;
     document.head.appendChild(styleElement);
 }
+
+
+export function updateCurrentMessagesCSS(currentGroupClasses) {
+    // Remove existing style element if it exists
+    let existingStyleElement = document.querySelector('#currentGroupsCSS');
+    if (existingStyleElement) {
+        existingStyleElement.remove();
+    }
+
+    let css = '';
+    for (const class_ of currentGroupClasses) {
+        css += `
+.${class_} {
+    background-color: rgba(9, 255, 9, 0.1) !important;
+}
+`
+    }
+
+    // Create new style element with the updated CSS
+    let styleElement = document.createElement('style');
+    styleElement.id = 'currentGroupsCSS';
+    styleElement.textContent = css;
+    document.head.appendChild(styleElement);
+};
