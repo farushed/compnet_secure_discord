@@ -16,7 +16,7 @@ const styles = `
 }
 
 #encryptInput label:hover {
-    color: red;
+    color: var(--interactive-hover);
 }
 
 #encryptInput input[type=file]{
@@ -30,13 +30,36 @@ const styles = `
     box-sizing: border-box;
 }
 
-#encryptInput select {
+#groupSelect {
     border: none;
     color: white;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
 }
 
-#encryptInput option {
-    color: white;
+#groupSelected::after {
+    content: "∧";
+    padding: 0 1em 0 0.5em;
+}
+
+#groupSelect .options {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    right: 10px;
+    border-radius: 5px;
+}
+
+#groupSelect .options.hidden {
+    display: none;
+}
+
+#groupSelect .options div {
+    padding: 8px 12px;
+}
+
+#groupSelect .options div:hover {
+    background-color: var(--background-modifier-hover);
 }
 
 #displayedFiles {
@@ -89,6 +112,17 @@ p.decrypted {
     margin: 0;
 }
 
+
+.membersPopup {
+    position: absolute;
+    background-color: var(--background-floating);
+    box-shadow: var(--elevation-high);
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+    padding: 8px 12px;
+}
 
 .profileButtonContainer {
     padding: 6px 8px;

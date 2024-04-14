@@ -121,8 +121,8 @@ function processMessage(messageNode) {
     else {
         try {
             let [decrypted, gdUsed] = crypto.decrypt(groupDataByVer, text);
-            let warn = gdUsed !== groupDataByOwnerAndName.get(gdUsed.owner+'/'+gdUsed.name)[0]
-                        && messageTimestamp > gdUsed.revokedAt;
+            let warn = gdUsed !== groupDataByOwnerAndName.get(gdUsed.owner+'/'+gdUsed.name)[0] // not current
+                        && messageTimestamp > gdUsed.revokedAt; // and sent after that group data was revoked
             let groupInfo = `<span style="font-size:2.5em">`
                             +`${warn?"OLD KEY&emsp;":""}${gdUsed.owner}/${gdUsed.name}&emsp;`
                             +`</span>`;
@@ -130,6 +130,7 @@ function processMessage(messageNode) {
                                     +`<p class="encrypted">${groupInfo}${originalText}</p>`
                                     +`<p class="decrypted">${decrypted}</p>`
                                     +`</div>`;
+            addGroupMembersHover(messageNode.querySelector('.encrypted'), gdUsed);
             messageNode.classList.add('encrypted');
             if (warn) {
                 messageNode.classList.add('old');
@@ -406,19 +407,35 @@ function setupTextbox(encryptedInputContainer) {
 function setupCurrentGroupSelection(encryptedInputContainer) {
     encryptedInputContainer = encryptedInputContainer ?? document.querySelector('#encryptInput');
 
-    let select = document.createElement('select'); // create a new one and add it
+    let select = document.createElement('div'); // create a new one and add it
     let themedBackgroundClass = getRealClassName('themedBackground');
+    select.id = 'groupSelect';
     select.classList.add(themedBackgroundClass);
+
+    let selection = document.createElement('div'); // for the text that shows the current selection
+    selection.id = 'groupSelected';
+    selection.textContent = (currentGroupData.owner+'/'+currentGroupData.name) || 'Select a group';
+    select.appendChild(selection);
+
+    let selectOptions = document.createElement('div'); // container to hold the possible options
+    selectOptions.classList.add('options', themedBackgroundClass, 'hidden'); // start with the dropdown closed
+    select.appendChild(selectOptions);
 
     // sort by the map value ([1])'s latest key ([0])'s creation timestamp, then return just the map keys
     let sorted = [...groupDataByOwnerAndName.entries()].sort((a, b) => a[1][0].ts - b[1][0].ts);
     for (const [ownerAndName, gdList] of sorted) {
-        let option = document.createElement('option');
-        option.textContent = `${ownerAndName} (${gdList[0].mem.join(', ')})`;
-        option.value = ownerAndName;
-        option.selected = currentGroupData && (ownerAndName === currentGroupData.owner + '/' + currentGroupData.name);
-        option.classList.add(themedBackgroundClass);
-        select.appendChild(option);
+        let option = document.createElement('div');
+        option.textContent = ownerAndName;
+        selectOptions.appendChild(option);
+
+        let gd = gdList[0]; // the latest groupData for the group
+        addGroupMembersHover(option, gd, true, true);
+        option.addEventListener('click', (event) => {
+            console.log('selected', ownerAndName);
+            selection.innerText = ownerAndName;
+            currentGroupData = gd;
+            storage.storeCurrentGroupData(gd);
+        });
     }
 
     let existingSelect = encryptedInputContainer.querySelector('select');
@@ -428,13 +445,18 @@ function setupCurrentGroupSelection(encryptedInputContainer) {
         encryptedInputContainer.append(select);
     }
 
-    select.addEventListener('change', function (event) {
-        let selectedOption = event.target.value;
-        console.log('selected', selectedOption);
-        let gd = groupDataByOwnerAndName.get(selectedOption)[0]; // latest groupData for that group
-        currentGroupData = gd;
-        storage.storeCurrentGroupData(gd);
+    select.addEventListener('click', (event) => {
+        if (selectOptions.classList.contains('hidden')) {
+            selectOptions.classList.remove('hidden');
+            event.stopPropagation();
+
+            // close the dropdown on the next click, regardless of if we select an option or click elsewhere
+            document.addEventListener('click', (event) => {
+                selectOptions.classList.add('hidden');
+            }, {once: true});
+        }
     });
+
 }
 
 // Add buttons to user profile to allow adding or removing them from the current group
@@ -484,6 +506,31 @@ function addEncryptedReplyButton(buttonsInnerContainer) {
         currentReply = buttonsInnerContainer.closest('li').id.match(/-(\d+)$/)[1];
         console.log('set', currentReply);
         document.querySelector('#replyingTo').innerHTML = `Replying to ${currentReply}`;
+    });
+}
+
+function addGroupMembersHover(element, groupData, above=false, left=false) {
+    let popup;
+    let leftOffset, topOffset;
+
+    element.addEventListener('mouseenter', (event) => {
+        popup = document.createElement('div');
+        popup.classList.add('membersPopup');
+        popup.innerHTML = groupData.mem.join(', ');
+
+        document.body.appendChild(popup);
+
+        leftOffset = left ? -5 - popup.offsetWidth : 10;
+        topOffset = above ? -2 - popup.offsetHeight : 10;
+    });
+
+    element.addEventListener('mousemove', (event) => {
+        popup.style.left = event.clientX + window.scrollX + leftOffset + 'px';
+        popup.style.top  = event.clientY + window.scrollY + topOffset + 'px';
+    })
+
+    element.addEventListener('mouseleave', (event) => {
+        document.body.removeChild(popup);
     })
 }
 
