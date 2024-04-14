@@ -289,11 +289,17 @@ function createGroup(groupName) {
     setupCurrentGroupSelection(); // since the groups have changed
 }
 
+function getRealClassName(className) {
+    return [...document.querySelector(`[class*=${className}]`).classList].filter(c => c.startsWith(className))[0];
+}
 
 // Create and insert a container for the textbox etc. above the existing message input
 function setupEncryptedContainer() {
     let encryptedInputContainer = document.createElement('div');
     encryptedInputContainer.id = 'encryptInput';
+    encryptedInputContainer.classList.add(
+        ...document.querySelector('form [class*=scrollable]').classList, // background etc of the default textbox div
+    )
     let formDiv = document.querySelector('form > div');
     formDiv.prepend(encryptedInputContainer);
 
@@ -309,7 +315,7 @@ function setupTextbox(encryptedInputContainer) {
     // A container to hold 'uploaded' files
     let displayedFiles = document.createElement('div');
     displayedFiles.id = 'displayedFiles';
-    encryptedInputContainer.append(displayedFiles);
+    encryptedInputContainer.parentNode.prepend(displayedFiles);
 
     function addToDisplayed(file) {
         const reader = new FileReader();
@@ -329,7 +335,15 @@ function setupTextbox(encryptedInputContainer) {
     }
 
     // Add file input to container
+    let label = document.createElement('label');
+    label.setAttribute('for', 'fileInput');
+    label.innerHTML = `<svg aria-hidden="true" role="img" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">`
+                + `<circle cx="12" cy="12" r="10" fill="transparent" class=""></circle>`
+                + `<path fill="var(--interactive-normal)" fill-rule="evenodd" d="M12 23a11 11 0 1 0 0-22 11 11 0 0 0 0 22Zm0-17a1 1 0 0 1 1 1v4h4a1 1 0 1 1 0 2h-4v4a1 1 0 1 1-2 0v-4H7a1 1 0 1 1 0-2h4V7a1 1 0 0 1 1-1Z" clip-rule="evenodd" class="attachButtonPlus_fd0021"></path>`
+                + `</svg>`;
+    encryptedInputContainer.append(label);
     let fileInput = document.createElement('input');
+    fileInput.id = 'fileInput';
     fileInput.type = 'file';
     fileInput.accept = 'image/*';
     fileInput.multiple = true;
@@ -348,7 +362,6 @@ function setupTextbox(encryptedInputContainer) {
     // Create the actual textbox
     let textbox = document.createElement('input');
     textbox.classList.add(
-        ...document.querySelector('form [class*=scrollable]').classList, // background etc of the default textbox div
         ...document.querySelector('form [role*=textbox]').classList.values()
             .filter(c => !c.match(/slateTextArea/)), // font and text area properties (but not the positioning class)
     )
@@ -392,15 +405,19 @@ function setupTextbox(encryptedInputContainer) {
 // Add a select element to allow for choosing which group you want active. If it exists, refresh the possible options
 function setupCurrentGroupSelection(encryptedInputContainer) {
     encryptedInputContainer = encryptedInputContainer ?? document.querySelector('#encryptInput');
+
     let select = document.createElement('select'); // create a new one and add it
+    let themedBackgroundClass = getRealClassName('themedBackground');
+    select.classList.add(themedBackgroundClass);
 
     // sort by the map value ([1])'s latest key ([0])'s creation timestamp, then return just the map keys
-    let sortedKeys = [...groupDataByOwnerAndName.entries()].sort((a, b) => a[1][0].ts - b[1][0].ts).map(x => x[0]);
-    for (const ownerName of sortedKeys) {
+    let sorted = [...groupDataByOwnerAndName.entries()].sort((a, b) => a[1][0].ts - b[1][0].ts);
+    for (const [ownerAndName, gdList] of sorted) {
         let option = document.createElement('option');
-        option.textContent = ownerName;
-        option.value = ownerName;
-        option.selected = currentGroupData && (ownerName === currentGroupData.owner + '/' + currentGroupData.name);
+        option.textContent = `${ownerAndName} (${gdList[0].mem.join(', ')})`;
+        option.value = ownerAndName;
+        option.selected = currentGroupData && (ownerAndName === currentGroupData.owner + '/' + currentGroupData.name);
+        option.classList.add(themedBackgroundClass);
         select.appendChild(option);
     }
 

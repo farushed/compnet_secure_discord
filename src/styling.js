@@ -4,19 +4,46 @@ const styles = `
     display: inline-block;*/
 }
 
-#encryptInput input {
-    border: none;
-    width: 100%;
-    box-sizing: border-box;
+#encryptInput {
+    display: flex;
     margin-bottom: 0.5em;
-    padding-left: 1em;
 }
 
-#encryptInput #displayedFiles {
+#encryptInput label {
+    display: flex;
+    padding: 10px 16px;
+    cursor: pointer;
+}
+
+#encryptInput label:hover {
+    color: red;
+}
+
+#encryptInput input[type=file]{
+    display: none;
+}
+
+#encryptInput input[type=text] {
+    background-color: transparent;
+    flex: 1;
+    border: none;
+    box-sizing: border-box;
+}
+
+#encryptInput select {
+    border: none;
+    color: white;
+}
+
+#encryptInput option {
+    color: white;
+}
+
+#displayedFiles {
     display: flex;
 }
 
-#encryptInput img {
+#displayedFiles img {
     max-width: 200px;
     max-height: 200px;
 }
