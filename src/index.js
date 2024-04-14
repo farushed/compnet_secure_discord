@@ -130,7 +130,7 @@ function processMessage(messageNode) {
                                     +`<p class="encrypted">${groupInfo}${originalText}</p>`
                                     +`<p class="decrypted">${decrypted}</p>`
                                     +`</div>`;
-            addGroupMembersHover(messageNode.querySelector('.encrypted'), gdUsed);
+            addGroupMembersHover(messageNode.querySelector('div'), gdUsed, true, false);
             messageNode.classList.add('encrypted');
             if (warn) {
                 messageNode.classList.add('old');
@@ -429,7 +429,7 @@ function setupCurrentGroupSelection(encryptedInputContainer) {
         selectOptions.appendChild(option);
 
         let gd = gdList[0]; // the latest groupData for the group
-        addGroupMembersHover(option, gd, true, true);
+        addGroupMembersHover(option, gd, false, true);
         option.addEventListener('click', (event) => {
             console.log('selected', ownerAndName);
             selection.innerText = ownerAndName;
@@ -511,7 +511,6 @@ function addEncryptedReplyButton(buttonsInnerContainer) {
 
 function addGroupMembersHover(element, groupData, above=false, left=false) {
     let popup;
-    let leftOffset, topOffset;
 
     element.addEventListener('mouseenter', (event) => {
         popup = document.createElement('div');
@@ -520,14 +519,11 @@ function addGroupMembersHover(element, groupData, above=false, left=false) {
 
         document.body.appendChild(popup);
 
-        leftOffset = left ? -5 - popup.offsetWidth : 10;
-        topOffset = above ? -2 - popup.offsetHeight : 10;
-    });
+        let elementPos = element.getBoundingClientRect();
 
-    element.addEventListener('mousemove', (event) => {
-        popup.style.left = event.clientX + window.scrollX + leftOffset + 'px';
-        popup.style.top  = event.clientY + window.scrollY + topOffset + 'px';
-    })
+        popup.style.top = elementPos.top + (above ? - popup.offsetHeight - 5 : 0) + 'px';
+        popup.style.left = elementPos.left + (left ? - popup.offsetWidth - 10 : 0) + 'px';
+    });
 
     element.addEventListener('mouseleave', (event) => {
         document.body.removeChild(popup);

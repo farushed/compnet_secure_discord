@@ -114,14 +114,15 @@ p.decrypted {
 
 
 .membersPopup {
-    position: absolute;
+    position: fixed;
+    z-index: 1;
     background-color: var(--background-floating);
     box-shadow: var(--elevation-high);
     border-radius: 5px;
-    font-size: 14px;
     font-weight: 500;
     color: var(--text-normal);
     padding: 8px 12px;
+    max-width: 25%;
 }
 
 .profileButtonContainer {
